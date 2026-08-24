@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Hollanov Fics List (Live)</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+  html, body, #root { height: 100%; margin: 0; padding: 0; }
+  body { -webkit-tap-highlight-color: transparent; }
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef, useMemo, useCallback } = React;
+
+window.storage = {
+  async get(key) {
+    const raw = localStorage.getItem(key);
+    if (raw === null) return null;
+    return { key, value: raw, shared: false };
+  },
+  async set(key, value) {
+    localStorage.setItem(key, value);
+    return { key, value, shared: false };
+  },
+};
+
+function Search(props) { return <svg xmlns="http://www.w3.org/2000/svg" width={props.size||16} height={props.size||16} viewBox="0 0 24 24" fill="none" stroke={props.color||"currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>; }
+function ExternalLink(props) { return <svg xmlns="http://www.w3.org/2000/svg" width={props.size||16} height={props.size||16} viewBox="0 0 24 24" fill="none" stroke={props.color||"currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>; }
+function ChevronDown(props) { return <svg xmlns="http://www.w3.org/2000/svg" width={props.size||18} height={props.size||18} viewBox="0 0 24 24" fill="none" stroke={props.color||"currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>; }
+function ChevronUp(props) { return <svg xmlns="http://www.w3.org/2000/svg" width={props.size||18} height={props.size||18} viewBox="0 0 24 24" fill="none" stroke={props.color||"currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"/></svg>; }
+function X(props) { return <svg xmlns="http://www.w3.org/2000/svg" width={props.size||16} height={props.size||16} viewBox="0 0 24 24" fill="none" stroke={props.color||"currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>; }
+function SlidersHorizontal(props) { return <svg xmlns="http://www.w3.org/2000/svg" width={props.size||16} height={props.size||16} viewBox="0 0 24 24" fill="none" stroke={props.color||"currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="21" y1="4" x2="14" y2="4"/><line x1="10" y1="4" x2="3" y2="4"/><line x1="21" y1="12" x2="12" y2="12"/><line x1="8" y1="12" x2="3" y2="12"/><line x1="21" y1="20" x2="16" y2="20"/><line x1="12" y1="20" x2="3" y2="20"/><line x1="14" y1="2" x2="14" y2="6"/><line x1="8" y1="10" x2="8" y2="14"/><line x1="16" y1="18" x2="16" y2="22"/></svg>; }
+function RefreshCw(props) { return <svg xmlns="http://www.w3.org/2000/svg" width={props.size||16} height={props.size||16} viewBox="0 0 24 24" fill="none" stroke={props.color||"currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>; }
+function Download(props) { return <svg xmlns="http://www.w3.org/2000/svg" width={props.size||16} height={props.size||16} viewBox="0 0 24 24" fill="none" stroke={props.color||"currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>; }
+
+const STATUS_LABELS = ['Unread', 'Read', 'DNF', 'Skipped', 'Not Interested', 'Currently Reading'];
+const STATUS_UNREAD=0, STATUS_READ=1, STATUS_DNF=2, STATUS_SKIPPED=3, STATUS_NOTINT=4, STATUS_READING=5;
+const DNR_LABELS = ['—', 'Writing/Pacing', 'Content/Tags', 'Content/Category', 'Other'];
+const DNR_WRITING=1, DNR_CONTENT_TAGS=2, DNR_CONTENT_CAT=3, DNR_OTHER=4;
+
+const STATUS_CODE_MAP = { '': 0, 'Read': 1, 'DNF': 2, 'Skipped': 3, 'Not Interested': 4, 'Currently Reading': 5 };
+const DNR_CODE_MAP = { '': 0, 'Writing/Pacing': 1, 'Content/Tags': 2, 'Content/Category': 3, 'Other': 4 };
+
+const COLORS = {
+  paper: '#EFEAE0', paperCard: '#FFFFFF', ink: '#231F20', inkSoft: '#75706A',
+  maroon: '#7A1F1F', maroonDark: '#5C1616', gold: '#9C7A3C', line: '#DCD4C4',
+  readGreen: '#3F6B4A', dnfPurple: '#6C5A8E', skipOrange: '#B5702B', notIntGray: '#948B84',
+};
+const STATUS_COLOR = {
+  [STATUS_UNREAD]: COLORS.inkSoft, [STATUS_READ]: COLORS.readGreen, [STATUS_DNF]: COLORS.dnfPurple,
+  [STATUS_SKIPPED]: COLORS.skipOrange, [STATUS_NOTINT]: COLORS.notIntGray, [STATUS_READING]: COLORS.gold,
+};
+
+const WORD_BUCKETS = [
+  ['Under 15k', 0, 15000], ['15k–30k', 15000, 30000], ['30k–60k', 30000, 60000],
+  ['60k–120k', 60000, 120000], ['120k–250k', 120000, 250000], ['250k+', 250000, Infinity],
+];
+
+const CLIENT_ID = '765897251156-e328g6jmu2obg8l0855km0iqsps062n5.apps.googleusercontent.com';
+const SHEET_ID = '1vsJxSpJFZaiBh540318Jq_yqIYG9h9ucTR_7AZ87L2I';
+const SHEET_TAB = 'Data List';
+const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
+const PAGE_SIZE = 25;
+
+function workIdFromLink(link) {
+  const m = /\/works\/(\d+)/.exec(link || '');
+  return m ? m[1] : (link || Math.random().toString(36));
+}
+
+function useGoogleAuth() {
+  const [accessToken, setAccessToken] = useState(null);
+  const [authError, setAuthError] = useState('');
+  const [gisReady, setGisReady] = useState(false);
+  const tokenClientRef = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    function init() {
+      if (cancelled) return;
+      if (!window.google || !window.google.accounts || !window.google.accounts.oauth2) {
+        setTimeout(init, 200);
+        return;
+      }
+      tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
+        client_id: CLIENT_ID,
+        scope: SHEETS_SCOPE,
+        callback: (resp) => {
+          if (resp.error) { setAuthError(resp.error_description || resp.error); return; }
+          setAuthError('');
+          setAccessToken(resp.access_token);
+        },
+      });
+      setGisReady(true);
+    }
+    init();
+    return () => { cancelled = true; };
+  }, []);
+
+  const signIn = () => {
+    setAuthError('');
+    if (tokenClientRef.current) tokenClientRef.current.requestAccessToken();
+  };
+  const signOut = () => {
+    if (accessToken && window.google) {
+      window.google.accounts.oauth2.revoke(accessToken, () => {});
+    }
+    setAccessToken(null);
+  };
+
+  return { accessToken, gisReady, signIn, signOut, authError };
+}
+
+function ficFromRow(headerIndex, row, rowNumber) {
+  const get = (name) => { const i = headerIndex[name]; return i !== undefined ? (row[i] || '') : ''; };
+  const title = get('Title').trim();
+  if (!title) return null;
+  const link = get('Link').trim();
+  const tagsRaw = get('Tags').trim();
+  const tags = tagsRaw ? tagsRaw.split(',').map(t => t.trim()).filter(Boolean) : [];
+  const num = (v) => { const n = parseInt(String(v).replace(/,/g, ''), 10); return isNaN(n) ? 0 : n; };
+
+  return {
+    id: workIdFromLink(link),
+    rowNumber,
+    title, link,
+    date: get('Date Published').trim(),
+    rating: get('Rating (S)').trim(),
+    category: get('Category').trim() || 'Uncategorized',
+    words: num(get('Words')),
+    chapters: num(get('Chapters')) || 1,
+    comments: num(get('Comments')),
+    kudos: num(get('Kudos')),
+    bookmarks: num(get('Bookmarks')),
+    hits: num(get('Hits')),
+    tags,
+    summary: get('Summary').trim(),
+    status: STATUS_CODE_MAP[get('Status').trim()] ?? 0,
+    dnr: DNR_CODE_MAP[get('DNR Reason').trim()] ?? 0,
+    kg: get('K').trim().toUpperCase() === 'Y',
+    bk: get('B').trim().toUpperCase() === 'Y',
+    syncState: 'idle', // 'idle' | 'syncing' | 'error'
+    syncError: '',
+  };
+}
+
+async function sheetsApiGet(accessToken) {
+  const range = encodeURIComponent(`'${SHEET_TAB}'!A1:AH`);
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${range}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`HTTP ${res.status}: ${body.slice(0, 300)}`);
+  }
+  const data = await res.json();
+  return data.values || [];
+}
+
+async function sheetsApiWriteStatus(accessToken, rowNumber, { status, dnr, kg, bk }) {
+  const range = encodeURIComponent(`'${SHEET_TAB}'!B${rowNumber}:E${rowNumber}`);
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${range}?valueInputOption=USER_ENTERED`;
+  const statusLabel = status === STATUS_UNREAD ? '' : STATUS_LABELS[status];
+  const dnrLabel = dnr ? DNR_LABELS[dnr] : '';
+  const body = { values: [[statusLabel, dnrLabel, kg ? 'Y' : '', bk ? 'Y' : '']] };
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const errBody = await res.text();
+    throw new Error(`HTTP ${res.status}: ${errBody.slice(0, 300)}`);
+  }
+}
+
+function useSheetFics(accessToken) {
+  const [fics, setFics] = useState([]);
+  const [status, setStatus] = useState('idle');
+  const [errorMsg, setErrorMsg] = useState('');
+  const [lastSynced, setLastSynced] = useState(null);
+
+  const fetchFics = useCallback(async () => {
+    if (!accessToken) return;
+    setStatus('loading');
+    setErrorMsg('');
+    try {
+      const rows = await sheetsApiGet(accessToken);
+      if (rows.length < 2) throw new Error('No data found in the "Data List" tab.');
+      const header = rows[0];
+      const headerIndex = {};
+      header.forEach((h, i) => { headerIndex[h.trim()] = i; });
+      const parsedFics = [];
+      for (let i = 1; i < rows.length; i++) {
+        const fic = ficFromRow(headerIndex, rows[i], i + 1);
+        if (fic) parsedFics.push(fic);
+      }
+      setFics(parsedFics);
+      setLastSynced(new Date());
+      setStatus('success');
+    } catch (e) {
+      setErrorMsg(e.message || String(e));
+      setStatus('error');
+    }
+  }, [accessToken]);
+
+  useEffect(() => { fetchFics(); }, [fetchFics]);
+
+  const updateFic = useCallback(async (ficId, patch) => {
+    let targetIdx = -1, prevFic = null;
+    setFics(prev => {
+      const idx = prev.findIndex(f => f.id === ficId);
+      if (idx === -1) return prev;
+      targetIdx = idx;
+      prevFic = prev[idx];
+      const next = [...prev];
+      next[idx] = { ...prev[idx], ...patch, syncState: 'syncing', syncError: '' };
+      return next;
+    });
+    if (targetIdx === -1) return;
+    try {
+      const merged = { ...prevFic, ...patch };
+      await sheetsApiWriteStatus(accessToken, merged.rowNumber, merged);
+      setFics(prev => {
+        const next = [...prev];
+        if (next[targetIdx] && next[targetIdx].id === ficId) next[targetIdx] = { ...next[targetIdx], syncState: 'idle' };
+        return next;
+      });
+    } catch (e) {
+      setFics(prev => {
+        const next = [...prev];
+        if (next[targetIdx] && next[targetIdx].id === ficId) {
+          next[targetIdx] = { ...prevFic, syncState: 'error', syncError: e.message || String(e) };
+        }
+        return next;
+      });
+    }
+  }, [accessToken]);
+
+  const retrySync = useCallback((ficId) => {
+    setFics(prev => {
+      const idx = prev.findIndex(f => f.id === ficId);
+      if (idx === -1) return prev;
+      const fic = prev[idx];
+      updateFic(ficId, { status: fic.status, dnr: fic.dnr, kg: fic.kg, bk: fic.bk });
+      return prev;
+    });
+  }, [updateFic]);
+
+  return { fics, status, errorMsg, lastSynced, refresh: fetchFics, updateFic, retrySync };
+}
+
+function computePercentileRanks(values) {
+  const n = values.length;
+  const sorted = values.map((v, i) => [v, i]).sort((a, b) => a[0] - b[0]);
+  const ranks = new Array(n);
+  let i = 0;
+  while (i < n) {
+    let j = i;
+    while (j + 1 < n && sorted[j + 1][0] === sorted[i][0]) j++;
+    const avgRank = (i + j) / 2;
+    for (let k = i; k <= j; k++) ranks[sorted[k][1]] = avgRank;
+    i = j + 1;
+  }
+  const denom = n > 1 ? n - 1 : 1;
+  return ranks.map(r => (r / denom) * 100);
+}
+
+function useComputedScores(fics) {
+  return useMemo(() => {
+    if (fics.length === 0) return null;
+    const n = fics.length;
+
+    const status = fics.map(f => f.status);
+    const dnr = fics.map(f => f.dnr);
+    const kg = fics.map(f => f.kg);
+    const bk = fics.map(f => f.bk);
+
+    const khVals = fics.map(f => f.kudos / (f.hits + 1));
+    const kchVals = fics.map(f => f.kudos / Math.max(1, f.chapters));
+    const bmVals = fics.map(f => f.bookmarks);
+    const coVals = fics.map(f => f.comments);
+    const pctlKH = computePercentileRanks(khVals);
+    const pctlKCH = computePercentileRanks(kchVals);
+    const pctlBM = computePercentileRanks(bmVals);
+    const pctlCO = computePercentileRanks(coVals);
+    const qScore = new Array(n);
+    for (let i = 0; i < n; i++) {
+      qScore[i] = (pctlKH[i] * 1 + pctlKCH[i] * 1 + pctlBM[i] * 1.5 + pctlCO[i] * 1) / 4.5;
+    }
+
+    // Full vocabulary — every tag/category that appears, no top-N cap
+    const tagStats = new Map(); // tag -> {readW, dnf, notInt}
+    const catStats = new Map();
+
+    function bump(map, key, field, amount) {
+      if (!map.has(key)) map.set(key, { readW: 0, dnf: 0, notInt: 0 });
+      map.get(key)[field] += amount;
+    }
+
+    for (let i = 0; i < n; i++) {
+      const s = status[i], d = dnr[i], f = fics[i];
+      if (s === STATUS_READ) {
+        const w = 1 + 0.5 * (kg[i] ? 1 : 0) + 1 * (bk[i] ? 1 : 0);
+        for (const t of f.tags) bump(tagStats, t, 'readW', w);
+        bump(catStats, f.category, 'readW', w);
+      } else if (s === STATUS_DNF) {
+        if (d !== DNR_WRITING && d !== DNR_CONTENT_CAT) for (const t of f.tags) bump(tagStats, t, 'dnf', 1);
+        if (d !== DNR_WRITING && d !== DNR_CONTENT_TAGS) bump(catStats, f.category, 'dnf', 1);
+      } else if (s === STATUS_NOTINT) {
+        if (d !== DNR_WRITING && d !== DNR_CONTENT_CAT) for (const t of f.tags) bump(tagStats, t, 'notInt', 1);
+        if (d !== DNR_WRITING && d !== DNR_CONTENT_TAGS) bump(catStats, f.category, 'notInt', 1);
+      }
+    }
+
+    function affinityOf(map, key, dnfWeight) {
+      const s = map.get(key);
+      if (!s) return { affinity: 0, totalRated: 0 };
+      const totalRated = s.readW + s.dnf + s.notInt;
+      const affinity = totalRated === 0 ? 0 : (s.readW - s.dnf * dnfWeight - s.notInt) / totalRated;
+      return { affinity, totalRated };
+    }
+
+    const pScore = new Array(n);
+    for (let i = 0; i < n; i++) {
+      const f = fics[i];
+      let tSum = 0, tCount = 0;
+      for (const t of f.tags) {
+        const { affinity, totalRated } = affinityOf(tagStats, t, 0.5);
+        if (totalRated > 0) { tSum += affinity; tCount++; }
+      }
+      const ad = tCount > 0 ? tSum / tCount : 0;
+
+      const { affinity: ae } = affinityOf(catStats, f.category, 0.5);
+      pScore[i] = qScore[i] * (1 + 0.6 * ad) * (1 + 0.3 * Math.max(0, ae));
+    }
+
+    return { status, dnr, kg, bk, pScore };
+  }, [fics]);
+}
+
+function Chip({ active, onClick, children, color }) {
+  return (
+    <button onClick={onClick} className="whitespace-nowrap rounded-full px-3 py-2 text-sm font-medium border shrink-0"
+      style={{ backgroundColor: active ? (color || COLORS.ink) : COLORS.paperCard, color: active ? COLORS.paperCard : COLORS.ink, borderColor: active ? (color || COLORS.ink) : COLORS.line }}>
+      {children}
+    </button>
+  );
+}
+
+function StatusPicker({ ficId, status, dnr, kg, bk, onUpdate }) {
+  const [pendingStatus, setPendingStatus] = useState(null);
+  const setStatus = (s) => {
+    if (s === STATUS_READ) setPendingStatus(STATUS_READ);
+    else if (s === STATUS_DNF || s === STATUS_NOTINT) setPendingStatus(s);
+    else { onUpdate(ficId, { status: s, dnr: 0 }); setPendingStatus(null); }
+  };
+  const confirmRead = (kgVal, bkVal) => { onUpdate(ficId, { status: STATUS_READ, kg: kgVal, bk: bkVal }); setPendingStatus(null); };
+  const confirmDnr = (reasonCode) => { onUpdate(ficId, { status: pendingStatus, dnr: reasonCode }); setPendingStatus(null); };
+
+  return (
+    <div className="mt-3">
+      <div className="flex flex-wrap gap-1.5">
+        {[STATUS_UNREAD, STATUS_READING, STATUS_READ, STATUS_DNF, STATUS_SKIPPED, STATUS_NOTINT].map(s => (
+          <Chip key={s} active={status === s} onClick={() => setStatus(s)} color={STATUS_COLOR[s]}>{STATUS_LABELS[s]}</Chip>
+        ))}
+      </div>
+      {pendingStatus === STATUS_READ && (
+        <div className="mt-2 p-3 rounded-lg" style={{ backgroundColor: COLORS.paper }}>
+          <p className="text-xs font-medium mb-2" style={{ color: COLORS.inkSoft }}>Left kudos? Bookmarked?</p>
+          <div className="flex gap-2 flex-wrap">
+            {[[false, false, 'Neither'], [true, false, 'Kudos'], [false, true, 'Bookmarked'], [true, true, 'Both']].map(([kv, bv, label]) => (
+              <button key={label} onClick={() => confirmRead(kv, bv)} className="text-sm px-3 py-2 rounded-full border font-medium" style={{ borderColor: COLORS.line, backgroundColor: COLORS.paperCard, color: COLORS.ink }}>{label}</button>
+            ))}
+          </div>
+        </div>
+      )}
+      {(pendingStatus === STATUS_DNF || pendingStatus === STATUS_NOTINT) && (
+        <div className="mt-2 p-3 rounded-lg" style={{ backgroundColor: COLORS.paper }}>
+          <p className="text-xs font-medium mb-2" style={{ color: COLORS.inkSoft }}>Why?</p>
+          <div className="flex gap-2 flex-wrap">
+            {[DNR_WRITING, DNR_CONTENT_TAGS, DNR_CONTENT_CAT, DNR_OTHER].map(code => (
+              <button key={code} onClick={() => confirmDnr(code)} className="text-sm px-3 py-2 rounded-full border font-medium" style={{ borderColor: COLORS.line, backgroundColor: COLORS.paperCard, color: COLORS.ink }}>{DNR_LABELS[code]}</button>
+            ))}
+          </div>
+        </div>
+      )}
+      {status !== STATUS_UNREAD && pendingStatus === null && (
+        <p className="text-[11px] mt-1.5" style={{ color: COLORS.inkSoft }}>
+          {status === STATUS_READ && `Kudos: ${kg ? 'Yes' : 'No'} · Bookmarked: ${bk ? 'Yes' : 'No'}`}
+          {(status === STATUS_DNF || status === STATUS_NOTINT) && dnr > 0 && `Reason: ${DNR_LABELS[dnr]}`}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function FicCard({ fic, scores, ficIndex, onUpdate, onRetry, expanded, onToggleExpand }) {
+  const status = scores.status[ficIndex];
+  const pScore = scores.pScore[ficIndex];
+  const [tagsExpanded, setTagsExpanded] = useState(false);
+  const [summaryExpanded, setSummaryExpanded] = useState(false);
+  const TAG_PREVIEW = 6;
+  const SUMMARY_PREVIEW_LEN = 220;
+  const summaryIsLong = fic.summary && fic.summary.length > SUMMARY_PREVIEW_LEN;
+  const summaryText = summaryExpanded || !summaryIsLong ? fic.summary : fic.summary.slice(0, SUMMARY_PREVIEW_LEN) + '…';
+
+  return (
+    <div className="rounded-md p-4 mb-3" style={{ backgroundColor: status === STATUS_READ ? '#F1F8F4' : COLORS.paperCard, border: `1px solid ${COLORS.line}`, borderLeft: `4px solid ${STATUS_COLOR[status]}` }}>
+      <div className="flex items-center gap-2 mb-1.5">
+        {status !== STATUS_UNREAD && (
+          <span className="inline-block text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full" style={{ backgroundColor: STATUS_COLOR[status], color: '#FFFFFF' }}>{STATUS_LABELS[status]}</span>
+        )}
+        {fic.syncState === 'syncing' && (
+          <span className="text-[10px]" style={{ color: COLORS.inkSoft }}>Saving to sheet…</span>
+        )}
+        {fic.syncState === 'error' && (
+          <button onClick={() => onRetry(fic.id)} className="text-[10px] font-semibold underline" style={{ color: COLORS.maroon }}>
+            Save failed — tap to retry
+          </button>
+        )}
+      </div>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <h3 className="text-lg leading-snug" style={{ color: COLORS.ink, fontFamily: "'Lora', serif", fontWeight: 600 }}>{fic.title}</h3>
+          <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>
+            {fic.rating} · {fic.category} · {fic.words.toLocaleString()}w{fic.chapters > 1 ? ` · ${fic.chapters} ch` : ''} · {fic.date}
+          </p>
+        </div>
+        <div className="shrink-0 text-right">
+          <div className="text-lg font-bold" style={{ color: COLORS.maroon, fontFamily: "'Lora', serif" }}>{pScore.toFixed(0)}</div>
+          <div className="text-[9px] uppercase tracking-wide" style={{ color: COLORS.inkSoft }}>score</div>
+        </div>
+      </div>
+
+      <div className="flex gap-3 mt-2 text-xs" style={{ color: COLORS.inkSoft }}>
+        <span>♥ {fic.kudos.toLocaleString()}</span>
+        <span>⚑ {fic.bookmarks.toLocaleString()}</span>
+        <span>◉ {fic.hits.toLocaleString()}</span>
+      </div>
+
+      {fic.tags.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mt-2 items-center">
+          {fic.tags.slice(0, tagsExpanded ? fic.tags.length : TAG_PREVIEW).map(t => (
+            <span key={t} className="text-[11px] px-2 py-0.5 rounded" style={{ backgroundColor: COLORS.paper, color: COLORS.inkSoft }}>{t}</span>
+          ))}
+          {fic.tags.length > TAG_PREVIEW && (
+            <button onClick={() => setTagsExpanded(v => !v)} className="text-[11px] px-2 py-0.5 font-medium" style={{ color: COLORS.maroon }}>
+              {tagsExpanded ? 'Show less' : `+${fic.tags.length - TAG_PREVIEW} more`}
+            </button>
+          )}
+        </div>
+      )}
+
+      {fic.summary && (
+        <div className="mt-3">
+          <p className="text-sm leading-snug" style={{ color: COLORS.inkSoft, fontFamily: "'Lora', serif" }}>{summaryText}</p>
+          {summaryIsLong && (
+            <button onClick={() => setSummaryExpanded(v => !v)} className="text-xs font-medium mt-1" style={{ color: COLORS.maroon }}>
+              {summaryExpanded ? 'Show less' : 'Show more'}
+            </button>
+          )}
+        </div>
+      )}
+
+      <div className="flex items-center justify-between mt-3">
+        <a href={fic.link} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm font-medium py-2 px-1 -m-1" style={{ color: COLORS.maroon }}>
+          Read on AO3 <ExternalLink size={14} />
+        </a>
+        <button onClick={() => onToggleExpand(fic.id)} className="p-2 -m-2" aria-label="Toggle status controls">
+          {expanded ? <ChevronUp size={18} color={COLORS.inkSoft} /> : <ChevronDown size={18} color={COLORS.inkSoft} />}
+        </button>
+      </div>
+
+      {expanded && (
+        <StatusPicker ficId={fic.id} status={status} dnr={scores.dnr[ficIndex]} kg={scores.kg[ficIndex]} bk={scores.bk[ficIndex]} onUpdate={onUpdate} />
+      )}
+    </div>
+  );
+}
+
+function SignInScreen({ onSignIn, gisReady, authError }) {
+  return (
+    <div className="h-screen w-full flex items-center justify-center p-6" style={{ backgroundColor: COLORS.paper, fontFamily: "'Inter', system-ui, sans-serif" }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Lora:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap');`}</style>
+      <div className="max-w-sm w-full text-center">
+        <h1 className="text-2xl mb-2" style={{ color: COLORS.ink, fontFamily: "'Lora', serif", fontWeight: 700 }}>Sign in to sync</h1>
+        <p className="text-sm mb-4" style={{ color: COLORS.inkSoft }}>
+          Sign in with the Google account that owns (or can edit) your Hollanov sheet. Marking a fic here will write straight back to it.
+        </p>
+        <button onClick={onSignIn} disabled={!gisReady} className="w-full py-2.5 rounded-full text-sm font-semibold" style={{ backgroundColor: COLORS.ink, color: COLORS.paperCard }}>
+          {gisReady ? 'Sign in with Google' : 'Loading…'}
+        </button>
+        {authError && (<p className="text-xs mt-3" style={{ color: COLORS.maroon }}>{authError}</p>)}
+        <p className="text-[11px] mt-4" style={{ color: COLORS.inkSoft }}>
+          You may see an "unverified app" warning — that's expected for a personal project. Click Advanced → Go to (unsafe) to continue.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function toCSVField(v) {
+  const s = String(v ?? '');
+  if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+
+function ExportPanel({ fics, onClose }) {
+  const csvText = [
+    'Title,Link,Status,DNR Reason,K,B',
+    ...fics.map(f => [f.title, f.link, f.status ? STATUS_LABELS[f.status] : '', f.dnr ? DNR_LABELS[f.dnr] : '', f.kg ? 'Y' : '', f.bk ? 'Y' : ''].map(toCSVField).join(','))
+  ].join('\n');
+
+  const [copied, setCopied] = useState(false);
+  const copyToClipboard = async () => {
+    try { await navigator.clipboard.writeText(csvText); setCopied(true); setTimeout(() => setCopied(false), 2000); }
+    catch (e) { /* ignore */ }
+  };
+  const downloadCSV = () => {
+    const blob = new Blob([csvText], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'hollanov-backup.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.4)' }} onClick={onClose}>
+      <div className="w-full sm:max-w-lg max-h-[80vh] rounded-t-2xl sm:rounded-2xl p-4 overflow-y-auto" style={{ backgroundColor: COLORS.paper }} onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-lg" style={{ color: COLORS.ink, fontFamily: "'Lora', serif", fontWeight: 700 }}>Backup current list</h2>
+          <button onClick={onClose} className="p-2 -m-2"><X size={18} color={COLORS.inkSoft} /></button>
+        </div>
+        <p className="text-xs mb-3" style={{ color: COLORS.inkSoft }}>
+          Since marks now write straight to your sheet, this is just a snapshot backup of everything as it currently stands — not something you need day-to-day.
+        </p>
+        <div className="flex gap-2 mb-3">
+          <button onClick={copyToClipboard} className="flex-1 py-2.5 rounded-full text-sm font-semibold" style={{ backgroundColor: COLORS.ink, color: COLORS.paperCard }}>
+            {copied ? 'Copied!' : 'Copy to clipboard'}
+          </button>
+          <button onClick={downloadCSV} className="flex items-center gap-1.5 px-4 py-2.5 rounded-full text-sm font-semibold border" style={{ borderColor: COLORS.line, color: COLORS.ink, backgroundColor: COLORS.paperCard }}>
+            <Download size={14} /> CSV
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HollanovRolladexLive() {
+  const { accessToken, gisReady, signIn, signOut, authError } = useGoogleAuth();
+  const { fics, status: syncStatus, errorMsg, lastSynced, refresh, updateFic, retrySync } = useSheetFics(accessToken);
+  const scores = useComputedScores(fics);
+
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState(new Set([STATUS_UNREAD]));
+  const [ratingFilter, setRatingFilter] = useState(new Set());
+  const [wordFilter, setWordFilter] = useState(new Set());
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [sortBy, setSortBy] = useState('score');
+  const [expandedId, setExpandedId] = useState(null);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showExport, setShowExport] = useState(false);
+
+  const ALL_RATINGS = useMemo(() => [...new Set(fics.map(f => f.rating).filter(Boolean))].sort(), [fics]);
+
+  const toggleSetValue = (setFn, set, val) => {
+    setFn(prev => { const next = new Set(prev); if (next.has(val)) next.delete(val); else next.add(val); return next; });
+  };
+
+  const filteredIndices = useMemo(() => {
+    if (!scores) return [];
+    const q = search.trim().toLowerCase();
+    const indices = [];
+    for (let i = 0; i < fics.length; i++) {
+      const f = fics[i];
+      if (statusFilter.size && !statusFilter.has(scores.status[i])) continue;
+      if (ratingFilter.size && !ratingFilter.has(f.rating)) continue;
+      if (wordFilter.size) {
+        const inRange = [...wordFilter].some(bIdx => { const [, min, max] = WORD_BUCKETS[bIdx]; return f.words >= min && f.words < max; });
+        if (!inRange) continue;
+      }
+      if (q) {
+        const titleMatch = f.title.toLowerCase().includes(q);
+        const tagMatch = f.tags.some(t => t.toLowerCase().includes(q));
+        if (!titleMatch && !tagMatch) continue;
+      }
+      indices.push(i);
+    }
+    if (sortBy === 'score') indices.sort((a, b) => scores.pScore[b] - scores.pScore[a]);
+    else if (sortBy === 'recent') indices.sort((a, b) => (fics[b].date || '').localeCompare(fics[a].date || ''));
+    else if (sortBy === 'kudos') indices.sort((a, b) => fics[b].kudos - fics[a].kudos);
+    return indices;
+  }, [fics, scores, search, statusFilter, ratingFilter, wordFilter, sortBy]);
+
+  useEffect(() => { setVisibleCount(PAGE_SIZE); }, [search, statusFilter, ratingFilter, wordFilter, sortBy]);
+
+  if (!accessToken) return <SignInScreen onSignIn={signIn} gisReady={gisReady} authError={authError} />;
+
+  const activeFilterCount = ratingFilter.size + wordFilter.size;
+  const visible = filteredIndices.slice(0, visibleCount);
+
+  return (
+    <div className="h-screen w-full flex flex-col overflow-hidden" style={{ backgroundColor: COLORS.paper, fontFamily: "'Inter', system-ui, sans-serif" }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Lora:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap');`}</style>
+
+      <div className="px-4 pt-4 pb-3 shrink-0" style={{ borderBottom: `2px solid ${COLORS.maroon}` }}>
+        <div className="flex items-baseline justify-between">
+          <h1 className="text-2xl tracking-tight" style={{ color: COLORS.ink, fontFamily: "'Lora', serif", fontWeight: 700 }}>Hollanov Fics List</h1>
+          <div className="flex items-center gap-2">
+            <span className="text-xs" style={{ color: COLORS.inkSoft }}>{filteredIndices.length} / {fics.length}</span>
+            <button onClick={refresh} disabled={syncStatus === 'loading'} className="p-1.5 -m-1.5 rounded-full active:scale-95" aria-label="Refresh from sheet">
+              <RefreshCw size={15} color={COLORS.inkSoft} style={syncStatus === 'loading' ? { animation: 'spin 1s linear infinite' } : {}} />
+            </button>
+          </div>
+        </div>
+        <div className="flex items-center justify-between mt-0.5 flex-wrap gap-x-3">
+          <p className="text-[11px]" style={{ color: COLORS.inkSoft }}>
+            {syncStatus === 'loading' && 'Syncing…'}
+            {syncStatus === 'success' && lastSynced && `Synced ${lastSynced.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+            {syncStatus === 'error' && <span style={{ color: COLORS.maroon }}>Sync failed — showing last loaded data</span>}
+          </p>
+          <div className="flex items-center gap-3">
+            <button onClick={() => setShowExport(true)} className="text-[11px] underline" style={{ color: COLORS.inkSoft }}>Backup list</button>
+            <button onClick={() => setShowSettings(v => !v)} className="text-[11px] underline" style={{ color: COLORS.inkSoft }}>Account</button>
+          </div>
+        </div>
+
+        {showSettings && (
+          <div className="mt-2 p-3 rounded-lg text-xs" style={{ backgroundColor: COLORS.paperCard, border: `1px solid ${COLORS.line}` }}>
+            <p className="mb-2" style={{ color: COLORS.inkSoft }}>Signed in and syncing to your Hollanov sheet.</p>
+            <button onClick={signOut} className="font-medium" style={{ color: COLORS.maroon }}>Sign out</button>
+          </div>
+        )}
+        {syncStatus === 'error' && (<div className="mt-2 p-2.5 rounded-lg text-xs" style={{ backgroundColor: '#FBEAEA', color: COLORS.maroon }}>{errorMsg}</div>)}
+
+        <div className="mt-3 flex items-center gap-2 rounded-full px-3 py-2.5" style={{ backgroundColor: COLORS.paperCard, border: `1px solid ${COLORS.line}` }}>
+          <Search size={16} color={COLORS.inkSoft} />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search title or tag…" className="flex-1 bg-transparent outline-none text-sm" style={{ color: COLORS.ink }} />
+          {search && (<button onClick={() => setSearch('')} aria-label="Clear search"><X size={16} color={COLORS.inkSoft} /></button>)}
+        </div>
+
+        <div className="mt-3 flex items-center gap-2 overflow-x-auto pb-1">
+          <button onClick={() => setFiltersOpen(v => !v)} className="shrink-0 flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-full"
+            style={{ backgroundColor: filtersOpen ? COLORS.ink : COLORS.paperCard, color: filtersOpen ? COLORS.paperCard : COLORS.ink, border: `1px solid ${COLORS.line}` }}>
+            <SlidersHorizontal size={14} /> Filters {activeFilterCount > 0 ? `(${activeFilterCount})` : ''}
+          </button>
+          {[STATUS_UNREAD, STATUS_READING, STATUS_READ, STATUS_DNF, STATUS_SKIPPED, STATUS_NOTINT].map(s => (
+            <Chip key={s} active={statusFilter.has(s)} onClick={() => toggleSetValue(setStatusFilter, statusFilter, s)} color={STATUS_COLOR[s]}>{STATUS_LABELS[s]}</Chip>
+          ))}
+        </div>
+
+        <div className="mt-2 flex items-center gap-2">
+          <span className="text-xs" style={{ color: COLORS.inkSoft }}>Sort:</span>
+          {[['score', 'Score'], ['recent', 'Newest'], ['kudos', 'Kudos']].map(([key, label]) => (
+            <button key={key} onClick={() => setSortBy(key)} className="text-xs font-medium px-2.5 py-1 rounded-full" style={{ backgroundColor: sortBy === key ? COLORS.maroon : 'transparent', color: sortBy === key ? COLORS.paperCard : COLORS.inkSoft }}>{label}</button>
+          ))}
+        </div>
+
+        {filtersOpen && (
+          <div className="mt-3 space-y-3">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: COLORS.inkSoft }}>Rating</p>
+              <div className="flex flex-wrap gap-1.5">{ALL_RATINGS.map(r => (<Chip key={r} active={ratingFilter.has(r)} onClick={() => toggleSetValue(setRatingFilter, ratingFilter, r)}>{r}</Chip>))}</div>
+            </div>
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: COLORS.inkSoft }}>Word Count</p>
+              <div className="flex flex-wrap gap-1.5">{WORD_BUCKETS.map(([label], i) => (<Chip key={label} active={wordFilter.has(i)} onClick={() => toggleSetValue(setWordFilter, wordFilter, i)}>{label}</Chip>))}</div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-4 pt-3 pb-6">
+        {syncStatus === 'loading' && fics.length === 0 && (<div className="text-center mt-16" style={{ color: COLORS.inkSoft }}><p className="text-sm">Loading your fic list…</p></div>)}
+        {visible.length === 0 && syncStatus !== 'loading' && (<div className="text-center mt-16" style={{ color: COLORS.inkSoft }}><p className="text-sm">No fics match these filters.</p></div>)}
+        {scores && visible.map(idx => (
+          <FicCard key={fics[idx].id} fic={fics[idx]} ficIndex={idx} scores={scores} onUpdate={updateFic} onRetry={retrySync}
+            expanded={expandedId === fics[idx].id} onToggleExpand={(id) => setExpandedId(prev => (prev === id ? null : id))} />
+        ))}
+        {visibleCount < filteredIndices.length && (
+          <button onClick={() => setVisibleCount(v => v + PAGE_SIZE)} className="w-full py-3 rounded-full text-sm font-medium mt-2" style={{ backgroundColor: COLORS.paperCard, border: `1px solid ${COLORS.line}`, color: COLORS.maroon }}>
+            Load more ({filteredIndices.length - visibleCount} remaining)
+          </button>
+        )}
+      </div>
+
+      {showExport && <ExportPanel fics={fics} onClose={() => setShowExport(false)} />}
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<HollanovRolladexLive />);
+</script>
+</body>
+</html>
