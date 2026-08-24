@@ -76,13 +76,30 @@ function workIdFromLink(link) {
   return m ? m[1] : (link || Math.random().toString(36));
 }
 
+const TOKEN_CACHE_KEY = 'hollanov-gtoken';
+
 function useGoogleAuth() {
   const [accessToken, setAccessToken] = useState(null);
   const [authError, setAuthError] = useState('');
   const [gisReady, setGisReady] = useState(false);
   const tokenClientRef = useRef(null);
 
+  const cacheToken = (token, expiresInSeconds) => {
+    const expiresAt = Date.now() + (Number(expiresInSeconds) || 3600) * 1000 - 60000; // 1 min safety margin
+    try { localStorage.setItem(TOKEN_CACHE_KEY, JSON.stringify({ token, expiresAt })); } catch (e) {}
+  };
+
   useEffect(() => {
+    // On load, reuse a still-valid cached token instead of forcing a fresh sign-in
+    try {
+      const raw = localStorage.getItem(TOKEN_CACHE_KEY);
+      if (raw) {
+        const { token, expiresAt } = JSON.parse(raw);
+        if (token && expiresAt && Date.now() < expiresAt) setAccessToken(token);
+        else localStorage.removeItem(TOKEN_CACHE_KEY);
+      }
+    } catch (e) {}
+
     let cancelled = false;
     function init() {
       if (cancelled) return;
@@ -97,6 +114,7 @@ function useGoogleAuth() {
           if (resp.error) { setAuthError(resp.error_description || resp.error); return; }
           setAuthError('');
           setAccessToken(resp.access_token);
+          cacheToken(resp.access_token, resp.expires_in);
         },
       });
       setGisReady(true);
@@ -113,6 +131,7 @@ function useGoogleAuth() {
     if (accessToken && window.google) {
       window.google.accounts.oauth2.revoke(accessToken, () => {});
     }
+    localStorage.removeItem(TOKEN_CACHE_KEY);
     setAccessToken(null);
   };
 
@@ -152,13 +171,19 @@ function ficFromRow(headerIndex, row, rowNumber) {
   };
 }
 
+function authFetchError(status, body) {
+  const err = new Error(`HTTP ${status}: ${body.slice(0, 300)}`);
+  if (status === 401) err.isAuthError = true;
+  return err;
+}
+
 async function sheetsApiGet(accessToken) {
   const range = encodeURIComponent(`'${SHEET_TAB}'!A1:AH`);
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${range}`;
   const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`HTTP ${res.status}: ${body.slice(0, 300)}`);
+    throw authFetchError(res.status, body);
   }
   const data = await res.json();
   return data.values || [];
@@ -177,11 +202,11 @@ async function sheetsApiWriteStatus(accessToken, rowNumber, { status, dnr, kg, b
   });
   if (!res.ok) {
     const errBody = await res.text();
-    throw new Error(`HTTP ${res.status}: ${errBody.slice(0, 300)}`);
+    throw authFetchError(res.status, errBody);
   }
 }
 
-function useSheetFics(accessToken) {
+function useSheetFics(accessToken, onAuthError) {
   const [fics, setFics] = useState([]);
   const [status, setStatus] = useState('idle');
   const [errorMsg, setErrorMsg] = useState('');
@@ -208,6 +233,7 @@ function useSheetFics(accessToken) {
     } catch (e) {
       setErrorMsg(e.message || String(e));
       setStatus('error');
+      if (e.isAuthError && onAuthError) onAuthError();
     }
   }, [accessToken]);
 
@@ -241,6 +267,7 @@ function useSheetFics(accessToken) {
         }
         return next;
       });
+      if (e.isAuthError && onAuthError) onAuthError();
     }
   }, [accessToken]);
 
@@ -558,7 +585,7 @@ function ExportPanel({ fics, onClose }) {
 
 function HollanovRolladexLive() {
   const { accessToken, gisReady, signIn, signOut, authError } = useGoogleAuth();
-  const { fics, status: syncStatus, errorMsg, lastSynced, refresh, updateFic, retrySync } = useSheetFics(accessToken);
+  const { fics, status: syncStatus, errorMsg, lastSynced, refresh, updateFic, retrySync } = useSheetFics(accessToken, signOut);
   const scores = useComputedScores(fics);
 
   const [search, setSearch] = useState('');
@@ -608,6 +635,8 @@ function HollanovRolladexLive() {
   if (!accessToken) return <SignInScreen onSignIn={signIn} gisReady={gisReady} authError={authError} />;
 
   const activeFilterCount = ratingFilter.size + wordFilter.size;
+  const failedSyncCount = fics.filter(f => f.syncState === 'error').length;
+  const syncingCount = fics.filter(f => f.syncState === 'syncing').length;
   const visible = filteredIndices.slice(0, visibleCount);
 
   return (
@@ -643,6 +672,16 @@ function HollanovRolladexLive() {
           </div>
         )}
         {syncStatus === 'error' && (<div className="mt-2 p-2.5 rounded-lg text-xs" style={{ backgroundColor: '#FBEAEA', color: COLORS.maroon }}>{errorMsg}</div>)}
+        {failedSyncCount > 0 && (
+          <div className="mt-2 p-2.5 rounded-lg text-xs font-medium" style={{ backgroundColor: '#FBEAEA', color: COLORS.maroon }}>
+            {failedSyncCount} fic{failedSyncCount === 1 ? '' : 's'} failed to save to your sheet — scroll down to find the red "tap to retry" note on each.
+          </div>
+        )}
+        {syncingCount > 0 && failedSyncCount === 0 && (
+          <div className="mt-2 p-2.5 rounded-lg text-xs" style={{ backgroundColor: COLORS.paperCard, border: `1px solid ${COLORS.line}`, color: COLORS.inkSoft }}>
+            Saving {syncingCount} change{syncingCount === 1 ? '' : 's'} to your sheet…
+          </div>
+        )}
 
         <div className="mt-3 flex items-center gap-2 rounded-full px-3 py-2.5" style={{ backgroundColor: COLORS.paperCard, border: `1px solid ${COLORS.line}` }}>
           <Search size={16} color={COLORS.inkSoft} />
