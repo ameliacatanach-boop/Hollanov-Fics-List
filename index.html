@@ -71,9 +71,12 @@ const SHEET_TAB = 'Data List';
 const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
 const PAGE_SIZE = 25;
 
-function workIdFromLink(link) {
+function workIdFromLink(link, rowNumber) {
   const m = /\/works\/(\d+)/.exec(link || '');
-  return m ? m[1] : (link || Math.random().toString(36));
+  if (m) return m[1];
+  // Deterministic fallback for missing/malformed links — stable across renders,
+  // unlike a random value which would change every time and break identity lookups.
+  return 'row-' + rowNumber;
 }
 
 const TOKEN_CACHE_KEY = 'hollanov-gtoken';
@@ -148,7 +151,7 @@ function ficFromRow(headerIndex, row, rowNumber) {
   const num = (v) => { const n = parseInt(String(v).replace(/,/g, ''), 10); return isNaN(n) ? 0 : n; };
 
   return {
-    id: workIdFromLink(link),
+    id: workIdFromLink(link, rowNumber),
     rowNumber,
     title, link,
     date: get('Date Published').trim(),
