@@ -177,10 +177,25 @@ function authFetchError(status, body) {
   return err;
 }
 
+async function fetchWithTimeout(url, options, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      throw new Error('Request timed out — check your connection and try again.');
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function sheetsApiGet(accessToken) {
   const range = encodeURIComponent(`'${SHEET_TAB}'!A1:AH`);
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${range}`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const res = await fetchWithTimeout(url, { headers: { Authorization: `Bearer ${accessToken}` } }, 20000);
   if (!res.ok) {
     const body = await res.text();
     throw authFetchError(res.status, body);
@@ -195,11 +210,11 @@ async function sheetsApiWriteStatus(accessToken, rowNumber, { status, dnr, kg, b
   const statusLabel = status === STATUS_UNREAD ? '' : STATUS_LABELS[status];
   const dnrLabel = dnr ? DNR_LABELS[dnr] : '';
   const body = { values: [[statusLabel, dnrLabel, kg ? 'Y' : '', bk ? 'Y' : '']] };
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     method: 'PUT',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-  });
+  }, 15000);
   if (!res.ok) {
     const errBody = await res.text();
     throw authFetchError(res.status, errBody);
