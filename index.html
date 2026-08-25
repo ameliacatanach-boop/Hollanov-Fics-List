@@ -229,6 +229,8 @@ function useSheetFics(accessToken, onAuthError) {
   const [status, setStatus] = useState('idle');
   const [errorMsg, setErrorMsg] = useState('');
   const [lastSynced, setLastSynced] = useState(null);
+  const ficsRef = useRef([]);
+  useEffect(() => { ficsRef.current = fics; }, [fics]);
 
   const fetchFics = useCallback(async () => {
     if (!accessToken) return;
@@ -258,50 +260,28 @@ function useSheetFics(accessToken, onAuthError) {
   useEffect(() => { fetchFics(); }, [fetchFics]);
 
   const updateFic = useCallback(async (ficId, patch) => {
-    console.log('[updateFic] called', { ficId, patch });
-    let targetIdx = -1, prevFic = null;
-    setFics(prev => {
-      const idx = prev.findIndex(f => f.id === ficId);
-      if (idx === -1) return prev;
-      targetIdx = idx;
-      prevFic = prev[idx];
-      const next = [...prev];
-      next[idx] = { ...prev[idx], ...patch, syncState: 'syncing', syncError: '' };
-      return next;
-    });
-    console.log('[updateFic] after setFics', { targetIdx, prevFic });
-    if (targetIdx === -1) { console.log('[updateFic] EXIT: fic not found in current list'); return; }
+    // Read the current fic from a ref (kept in sync via useEffect) rather than as a
+    // side effect inside a setState updater — updater functions must stay pure, since
+    // React can invoke them more than once, which was silently corrupting this lookup.
+    const prevFic = ficsRef.current.find(f => f.id === ficId);
+    if (!prevFic) return;
+
+    setFics(prev => prev.map(f => f.id === ficId ? { ...f, ...patch, syncState: 'syncing', syncError: '' } : f));
+
     try {
       const merged = { ...prevFic, ...patch };
-      console.log('[updateFic] about to call sheetsApiWriteStatus', { rowNumber: merged.rowNumber, merged });
       await sheetsApiWriteStatus(accessToken, merged.rowNumber, merged);
-      console.log('[updateFic] write succeeded');
-      setFics(prev => {
-        const next = [...prev];
-        if (next[targetIdx] && next[targetIdx].id === ficId) next[targetIdx] = { ...next[targetIdx], syncState: 'idle' };
-        return next;
-      });
+      setFics(prev => prev.map(f => f.id === ficId ? { ...f, syncState: 'idle' } : f));
     } catch (e) {
-      console.log('[updateFic] CAUGHT ERROR', e);
-      setFics(prev => {
-        const next = [...prev];
-        if (next[targetIdx] && next[targetIdx].id === ficId) {
-          next[targetIdx] = { ...prevFic, syncState: 'error', syncError: e.message || String(e) };
-        }
-        return next;
-      });
+      setFics(prev => prev.map(f => f.id === ficId ? { ...prevFic, syncState: 'error', syncError: e.message || String(e) } : f));
       if (e.isAuthError && onAuthError) onAuthError();
     }
   }, [accessToken]);
 
   const retrySync = useCallback((ficId) => {
-    setFics(prev => {
-      const idx = prev.findIndex(f => f.id === ficId);
-      if (idx === -1) return prev;
-      const fic = prev[idx];
-      updateFic(ficId, { status: fic.status, dnr: fic.dnr, kg: fic.kg, bk: fic.bk });
-      return prev;
-    });
+    const fic = ficsRef.current.find(f => f.id === ficId);
+    if (!fic) return;
+    updateFic(ficId, { status: fic.status, dnr: fic.dnr, kg: fic.kg, bk: fic.bk });
   }, [updateFic]);
 
   return { fics, status, errorMsg, lastSynced, refresh: fetchFics, updateFic, retrySync };
@@ -408,10 +388,9 @@ function Chip({ active, onClick, children, color }) {
 function StatusPicker({ ficId, status, dnr, kg, bk, onUpdate }) {
   const [pendingStatus, setPendingStatus] = useState(null);
   const setStatus = (s) => {
-    console.log('[setStatus] clicked', { s, ficId });
     if (s === STATUS_READ) setPendingStatus(STATUS_READ);
     else if (s === STATUS_DNF || s === STATUS_NOTINT) setPendingStatus(s);
-    else { console.log('[setStatus] direct path, calling onUpdate'); onUpdate(ficId, { status: s, dnr: 0 }); setPendingStatus(null); }
+    else { onUpdate(ficId, { status: s, dnr: 0 }); setPendingStatus(null); }
   };
   const confirmRead = (kgVal, bkVal) => { onUpdate(ficId, { status: STATUS_READ, kg: kgVal, bk: bkVal }); setPendingStatus(null); };
   const confirmDnr = (reasonCode) => { onUpdate(ficId, { status: pendingStatus, dnr: reasonCode }); setPendingStatus(null); };
@@ -611,7 +590,6 @@ function HollanovRolladexLive() {
   const { accessToken, gisReady, signIn, signOut, authError } = useGoogleAuth();
   const { fics, status: syncStatus, errorMsg, lastSynced, refresh, updateFic, retrySync } = useSheetFics(accessToken, signOut);
   const scores = useComputedScores(fics);
-  useEffect(() => { window.__fics = fics; console.log('[debug] window.__fics updated, count:', fics.length); }, [fics]);
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState(new Set([STATUS_UNREAD]));
