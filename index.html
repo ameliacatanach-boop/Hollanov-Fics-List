@@ -682,6 +682,8 @@ function HollanovRolladexLive() {
   const [wordFilter, setWordFilter] = useState(new Set());
   const [selectedTags, setSelectedTags] = useState([]);
   const [tagQuery, setTagQuery] = useState('');
+  const [excludedTags, setExcludedTags] = useState([]);
+  const [excludeTagQuery, setExcludeTagQuery] = useState('');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [sortBy, setSortBy] = useState('score');
   const [expandedId, setExpandedId] = useState(null);
@@ -690,16 +692,35 @@ function HollanovRolladexLive() {
   const [showExport, setShowExport] = useState(false);
 
   const ALL_RATINGS = useMemo(() => [...new Set(fics.map(f => f.rating).filter(Boolean))].sort(), [fics]);
-  const ALL_TAGS = useMemo(() => [...new Set(fics.flatMap(f => f.tags))].sort(), [fics]);
+  const ALL_TAGS = useMemo(() => [...new Set(fics.flatMap(f => f.tags))], [fics]);
+  const TAG_FREQUENCY = useMemo(() => {
+    const m = new Map();
+    fics.forEach(f => f.tags.forEach(t => m.set(t, (m.get(t) || 0) + 1)));
+    return m;
+  }, [fics]);
+  const TAGS_BY_FREQUENCY = useMemo(() => [...ALL_TAGS].sort((a, b) => TAG_FREQUENCY.get(b) - TAG_FREQUENCY.get(a)), [ALL_TAGS, TAG_FREQUENCY]);
+
   const tagSuggestions = useMemo(() => {
     const q = tagQuery.trim().toLowerCase();
-    return ALL_TAGS
-      .filter(t => !selectedTags.includes(t))
+    const pool = q ? [...ALL_TAGS].sort() : TAGS_BY_FREQUENCY;
+    return pool
+      .filter(t => !selectedTags.includes(t) && !excludedTags.includes(t))
       .filter(t => !q || t.toLowerCase().includes(q))
-      .slice(0, 8);
-  }, [ALL_TAGS, tagQuery, selectedTags]);
+      .slice(0, 5);
+  }, [ALL_TAGS, TAGS_BY_FREQUENCY, tagQuery, selectedTags, excludedTags]);
   const addTag = (t) => { setSelectedTags(prev => [...prev, t]); setTagQuery(''); };
   const removeTag = (t) => setSelectedTags(prev => prev.filter(x => x !== t));
+
+  const excludeTagSuggestions = useMemo(() => {
+    const q = excludeTagQuery.trim().toLowerCase();
+    const pool = q ? [...ALL_TAGS].sort() : TAGS_BY_FREQUENCY;
+    return pool
+      .filter(t => !selectedTags.includes(t) && !excludedTags.includes(t))
+      .filter(t => !q || t.toLowerCase().includes(q))
+      .slice(0, 5);
+  }, [ALL_TAGS, TAGS_BY_FREQUENCY, excludeTagQuery, selectedTags, excludedTags]);
+  const addExcludeTag = (t) => { setExcludedTags(prev => [...prev, t]); setExcludeTagQuery(''); };
+  const removeExcludeTag = (t) => setExcludedTags(prev => prev.filter(x => x !== t));
 
   const toggleSetValue = (setFn, set, val) => {
     setFn(prev => { const next = new Set(prev); if (next.has(val)) next.delete(val); else next.add(val); return next; });
@@ -718,6 +739,7 @@ function HollanovRolladexLive() {
         if (!inRange) continue;
       }
       if (selectedTags.length && !selectedTags.every(t => f.tags.includes(t))) continue;
+      if (excludedTags.length && excludedTags.some(t => f.tags.includes(t))) continue;
       if (q) {
         const titleMatch = f.title.toLowerCase().includes(q);
         const tagMatch = f.tags.some(t => t.toLowerCase().includes(q));
@@ -730,13 +752,13 @@ function HollanovRolladexLive() {
     else if (sortBy === 'recent') indices.sort((a, b) => (fics[b].date || '').localeCompare(fics[a].date || ''));
     else if (sortBy === 'kudos') indices.sort((a, b) => fics[b].kudos - fics[a].kudos);
     return indices;
-  }, [fics, scores, search, statusFilter, ratingFilter, wordFilter, selectedTags, sortBy]);
+  }, [fics, scores, search, statusFilter, ratingFilter, wordFilter, selectedTags, excludedTags, sortBy]);
 
   useEffect(() => { setVisibleCount(PAGE_SIZE); }, [search, statusFilter, ratingFilter, wordFilter, sortBy]);
 
   if (!accessToken) return <SignInScreen onSignIn={signIn} gisReady={gisReady} authError={authError} />;
 
-  const activeFilterCount = ratingFilter.size + wordFilter.size + selectedTags.length;
+  const activeFilterCount = ratingFilter.size + wordFilter.size + selectedTags.length + excludedTags.length;
   const failedSyncCount = fics.filter(f => f.syncState === 'error').length;
   const syncingCount = fics.filter(f => f.syncState === 'syncing').length;
   const visible = filteredIndices.slice(0, visibleCount);
@@ -819,7 +841,7 @@ function HollanovRolladexLive() {
               <div className="flex flex-wrap gap-1.5">{WORD_BUCKETS.map(([label], i) => (<Chip key={label} active={wordFilter.has(i)} onClick={() => toggleSetValue(setWordFilter, wordFilter, i)}>{label}</Chip>))}</div>
             </div>
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: COLORS.inkSoft }}>Tags</p>
+              <p className="text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: COLORS.inkSoft }}>Include Tags</p>
               {selectedTags.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mb-2">
                   {selectedTags.map(t => (
@@ -832,7 +854,7 @@ function HollanovRolladexLive() {
               )}
               <div className="flex items-center gap-2 rounded-full px-3 py-2" style={{ backgroundColor: COLORS.paperCard, border: `1px solid ${COLORS.line}` }}>
                 <Search size={14} color={COLORS.inkSoft} />
-                <input value={tagQuery} onChange={e => setTagQuery(e.target.value)} placeholder="Search tags to include…"
+                <input value={tagQuery} onChange={e => setTagQuery(e.target.value)} placeholder={tagQuery ? 'Search tags…' : 'Top 5 shown — or search…'}
                   className="flex-1 bg-transparent outline-none text-sm" style={{ color: COLORS.ink }} />
               </div>
               {tagSuggestions.length > 0 && (
@@ -840,7 +862,35 @@ function HollanovRolladexLive() {
                   {tagSuggestions.map(t => (
                     <button key={t} onClick={() => addTag(t)} className="text-[12px] px-2.5 py-1 rounded-full border"
                       style={{ borderColor: COLORS.line, backgroundColor: COLORS.paper, color: COLORS.ink }}>
+                      {t} <span style={{ color: COLORS.inkSoft }}>({TAG_FREQUENCY.get(t)})</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: COLORS.inkSoft }}>Exclude Tags</p>
+              {excludedTags.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {excludedTags.map(t => (
+                    <span key={t} className="inline-flex items-center gap-1.5 text-[12px] font-medium px-2.5 py-1 rounded-full" style={{ backgroundColor: '#A13A3A', color: '#FFFFFF' }}>
                       {t}
+                      <button onClick={() => removeExcludeTag(t)} aria-label={`Remove ${t} exclusion`}><X size={12} /></button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="flex items-center gap-2 rounded-full px-3 py-2" style={{ backgroundColor: COLORS.paperCard, border: `1px solid ${COLORS.line}` }}>
+                <Search size={14} color={COLORS.inkSoft} />
+                <input value={excludeTagQuery} onChange={e => setExcludeTagQuery(e.target.value)} placeholder={excludeTagQuery ? 'Search tags…' : 'Top 5 shown — or search…'}
+                  className="flex-1 bg-transparent outline-none text-sm" style={{ color: COLORS.ink }} />
+              </div>
+              {excludeTagSuggestions.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {excludeTagSuggestions.map(t => (
+                    <button key={t} onClick={() => addExcludeTag(t)} className="text-[12px] px-2.5 py-1 rounded-full border"
+                      style={{ borderColor: COLORS.line, backgroundColor: COLORS.paper, color: COLORS.ink }}>
+                      {t} <span style={{ color: COLORS.inkSoft }}>({TAG_FREQUENCY.get(t)})</span>
                     </button>
                   ))}
                 </div>
