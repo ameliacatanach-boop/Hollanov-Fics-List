@@ -41,23 +41,27 @@ function X(props) { return <svg xmlns="http://www.w3.org/2000/svg" width={props.
 function SlidersHorizontal(props) { return <svg xmlns="http://www.w3.org/2000/svg" width={props.size||16} height={props.size||16} viewBox="0 0 24 24" fill="none" stroke={props.color||"currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="21" y1="4" x2="14" y2="4"/><line x1="10" y1="4" x2="3" y2="4"/><line x1="21" y1="12" x2="12" y2="12"/><line x1="8" y1="12" x2="3" y2="12"/><line x1="21" y1="20" x2="16" y2="20"/><line x1="12" y1="20" x2="3" y2="20"/><line x1="14" y1="2" x2="14" y2="6"/><line x1="8" y1="10" x2="8" y2="14"/><line x1="16" y1="18" x2="16" y2="22"/></svg>; }
 function RefreshCw(props) { return <svg xmlns="http://www.w3.org/2000/svg" width={props.size||16} height={props.size||16} viewBox="0 0 24 24" fill="none" stroke={props.color||"currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>; }
 function Download(props) { return <svg xmlns="http://www.w3.org/2000/svg" width={props.size||16} height={props.size||16} viewBox="0 0 24 24" fill="none" stroke={props.color||"currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>; }
+function StarIcon(props) { return <svg xmlns="http://www.w3.org/2000/svg" width={props.size||16} height={props.size||16} viewBox="0 0 24 24" fill={props.fill||"none"} stroke={props.color||"currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>; }
+function Megaphone(props) { return <svg xmlns="http://www.w3.org/2000/svg" width={props.size||16} height={props.size||16} viewBox="0 0 24 24" fill={props.fill||"none"} stroke={props.color||"currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>; }
 
-const STATUS_LABELS = ['Unread', 'Read', 'DNF', 'Skipped', 'Not Interested', 'Currently Reading'];
-const STATUS_UNREAD=0, STATUS_READ=1, STATUS_DNF=2, STATUS_SKIPPED=3, STATUS_NOTINT=4, STATUS_READING=5;
+const STATUS_LABELS = ['Unread', 'Read', 'DNF', 'Skipped', 'Not Interested', 'Currently Reading', 'TBR'];
+const STATUS_UNREAD=0, STATUS_READ=1, STATUS_DNF=2, STATUS_SKIPPED=3, STATUS_NOTINT=4, STATUS_READING=5, STATUS_TBR=6;
 const DNR_LABELS = ['—', 'Writing/Pacing', 'Content/Tags', 'Content/Category', 'Other'];
 const DNR_WRITING=1, DNR_CONTENT_TAGS=2, DNR_CONTENT_CAT=3, DNR_OTHER=4;
 
-const STATUS_CODE_MAP = { '': 0, 'Read': 1, 'DNF': 2, 'Skipped': 3, 'Not Interested': 4, 'Currently Reading': 5 };
+const STATUS_CODE_MAP = { '': 0, 'Read': 1, 'DNF': 2, 'Skipped': 3, 'Not Interested': 4, 'Currently Reading': 5, 'TBR': 6 };
 const DNR_CODE_MAP = { '': 0, 'Writing/Pacing': 1, 'Content/Tags': 2, 'Content/Category': 3, 'Other': 4 };
 
 const COLORS = {
   paper: '#EFEAE0', paperCard: '#FFFFFF', ink: '#231F20', inkSoft: '#75706A',
   maroon: '#7A1F1F', maroonDark: '#5C1616', gold: '#9C7A3C', line: '#DCD4C4',
   readGreen: '#3F6B4A', dnfPurple: '#6C5A8E', skipOrange: '#B5702B', notIntGray: '#948B84',
+  tbrBlue: '#3D5A73', recGold: '#C9A227',
 };
 const STATUS_COLOR = {
   [STATUS_UNREAD]: COLORS.inkSoft, [STATUS_READ]: COLORS.readGreen, [STATUS_DNF]: COLORS.dnfPurple,
   [STATUS_SKIPPED]: COLORS.skipOrange, [STATUS_NOTINT]: COLORS.notIntGray, [STATUS_READING]: COLORS.gold,
+  [STATUS_TBR]: COLORS.tbrBlue,
 };
 
 const WORD_BUCKETS = [
@@ -148,6 +152,8 @@ function ficFromRow(headerIndex, row, rowNumber) {
   const link = get('Link').trim();
   const tagsRaw = get('Tags').trim();
   const tags = tagsRaw ? tagsRaw.split(',').map(t => t.trim()).filter(Boolean) : [];
+  const authorsRaw = get('Author').trim();
+  const authors = authorsRaw ? authorsRaw.split(',').map(a => a.trim()).filter(Boolean) : [];
   const dnrTagsRaw = get('DNR Tags').trim();
   const dnrTags = dnrTagsRaw ? dnrTagsRaw.split(',').map(t => t.trim()).filter(Boolean) : [];
   const num = (v) => { const n = parseInt(String(v).replace(/,/g, ''), 10); return isNaN(n) ? 0 : n; };
@@ -166,12 +172,15 @@ function ficFromRow(headerIndex, row, rowNumber) {
     bookmarks: num(get('Bookmarks')),
     hits: num(get('Hits')),
     tags,
+    authors,
     summary: get('Summary').trim(),
     status: STATUS_CODE_MAP[get('Status').trim()] ?? 0,
     dnr: DNR_CODE_MAP[get('DNR Reason').trim()] ?? 0,
     dnrTags,
     kg: get('K').trim().toUpperCase() === 'Y',
     bk: get('B').trim().toUpperCase() === 'Y',
+    recommended: get('Recommended').trim().toUpperCase() === 'Y',
+    recSource: get('Rec Source').trim(),
     syncState: 'idle', // 'idle' | 'syncing' | 'error'
     syncError: '',
   };
@@ -220,6 +229,20 @@ async function sheetsApiGet(accessToken) {
   return data.values || [];
 }
 
+async function sheetsApiWriteCell(accessToken, rowNumber, colLetterVal, value) {
+  const range = encodeURIComponent(`'${SHEET_TAB}'!${colLetterVal}${rowNumber}`);
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${range}?valueInputOption=USER_ENTERED`;
+  const res = await fetchWithTimeout(url, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ values: [[value]] }),
+  }, 15000);
+  if (!res.ok) {
+    const errBody = await res.text();
+    throw authFetchError(res.status, errBody);
+  }
+}
+
 async function sheetsApiWriteStatus(accessToken, rowNumber, { status, dnr, kg, bk, dnrTags }, dnrTagsCol) {
   const range = encodeURIComponent(`'${SHEET_TAB}'!B${rowNumber}:E${rowNumber}`);
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${range}?valueInputOption=USER_ENTERED`;
@@ -237,19 +260,13 @@ async function sheetsApiWriteStatus(accessToken, rowNumber, { status, dnr, kg, b
   }
 
   if (dnrTagsCol) {
-    const tagsRange = encodeURIComponent(`'${SHEET_TAB}'!${dnrTagsCol}${rowNumber}`);
-    const tagsUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${tagsRange}?valueInputOption=USER_ENTERED`;
-    const tagsBody = { values: [[(dnrTags && dnrTags.length) ? dnrTags.join(', ') : '']] };
-    const tagsRes = await fetchWithTimeout(tagsUrl, {
-      method: 'PUT',
-      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(tagsBody),
-    }, 15000);
-    if (!tagsRes.ok) {
-      const errBody = await tagsRes.text();
-      throw authFetchError(tagsRes.status, errBody);
-    }
+    await sheetsApiWriteCell(accessToken, rowNumber, dnrTagsCol, (dnrTags && dnrTags.length) ? dnrTags.join(', ') : '');
   }
+}
+
+async function sheetsApiWriteRecommendation(accessToken, rowNumber, { recommended, recSource }, recCol, recSourceCol) {
+  if (recCol) await sheetsApiWriteCell(accessToken, rowNumber, recCol, recommended ? 'Y' : '');
+  if (recSourceCol) await sheetsApiWriteCell(accessToken, rowNumber, recSourceCol, recommended ? (recSource || '') : '');
 }
 
 function useSheetFics(accessToken, onAuthError) {
@@ -259,6 +276,8 @@ function useSheetFics(accessToken, onAuthError) {
   const [lastSynced, setLastSynced] = useState(null);
   const ficsRef = useRef([]);
   const dnrTagsColRef = useRef(null);
+  const recColRef = useRef(null);
+  const recSourceColRef = useRef(null);
   useEffect(() => { ficsRef.current = fics; }, [fics]);
 
   const fetchFics = useCallback(async () => {
@@ -272,6 +291,8 @@ function useSheetFics(accessToken, onAuthError) {
       const headerIndex = {};
       header.forEach((h, i) => { headerIndex[h.trim()] = i; });
       dnrTagsColRef.current = headerIndex['DNR Tags'] !== undefined ? colLetter(headerIndex['DNR Tags']) : null;
+      recColRef.current = headerIndex['Recommended'] !== undefined ? colLetter(headerIndex['Recommended']) : null;
+      recSourceColRef.current = headerIndex['Rec Source'] !== undefined ? colLetter(headerIndex['Rec Source']) : null;
       const parsedFics = [];
       for (let i = 1; i < rows.length; i++) {
         const fic = ficFromRow(headerIndex, rows[i], i + 1);
@@ -296,14 +317,14 @@ function useSheetFics(accessToken, onAuthError) {
     const prevFic = ficsRef.current.find(f => f.id === ficId);
     if (!prevFic) return;
 
-    setFics(prev => prev.map(f => f.id === ficId ? { ...f, ...patch, syncState: 'syncing', syncError: '' } : f));
+    setFics(prev => prev.map(f => f.id === ficId ? { ...f, ...patch, syncState: 'syncing', syncError: '', syncType: 'status' } : f));
 
     try {
       const merged = { ...prevFic, ...patch };
       await sheetsApiWriteStatus(accessToken, merged.rowNumber, merged, dnrTagsColRef.current);
       setFics(prev => prev.map(f => f.id === ficId ? { ...f, syncState: 'idle' } : f));
     } catch (e) {
-      setFics(prev => prev.map(f => f.id === ficId ? { ...prevFic, syncState: 'error', syncError: e.message || String(e) } : f));
+      setFics(prev => prev.map(f => f.id === ficId ? { ...prevFic, syncState: 'error', syncError: e.message || String(e), syncType: 'status' } : f));
       if (e.isAuthError && onAuthError) onAuthError();
     }
   }, [accessToken]);
@@ -311,10 +332,30 @@ function useSheetFics(accessToken, onAuthError) {
   const retrySync = useCallback((ficId) => {
     const fic = ficsRef.current.find(f => f.id === ficId);
     if (!fic) return;
-    updateFic(ficId, { status: fic.status, dnr: fic.dnr, kg: fic.kg, bk: fic.bk, dnrTags: fic.dnrTags });
+    if (fic.syncType === 'recommendation') {
+      updateRecommendation(ficId, { recommended: fic.recommended, recSource: fic.recSource });
+    } else {
+      updateFic(ficId, { status: fic.status, dnr: fic.dnr, kg: fic.kg, bk: fic.bk, dnrTags: fic.dnrTags });
+    }
   }, [updateFic]);
 
-  return { fics, status, errorMsg, lastSynced, refresh: fetchFics, updateFic, retrySync };
+  const updateRecommendation = useCallback(async (ficId, patch) => {
+    const prevFic = ficsRef.current.find(f => f.id === ficId);
+    if (!prevFic) return;
+
+    setFics(prev => prev.map(f => f.id === ficId ? { ...f, ...patch, syncState: 'syncing', syncError: '', syncType: 'recommendation' } : f));
+
+    try {
+      const merged = { ...prevFic, ...patch };
+      await sheetsApiWriteRecommendation(accessToken, merged.rowNumber, merged, recColRef.current, recSourceColRef.current);
+      setFics(prev => prev.map(f => f.id === ficId ? { ...f, syncState: 'idle' } : f));
+    } catch (e) {
+      setFics(prev => prev.map(f => f.id === ficId ? { ...prevFic, syncState: 'error', syncError: e.message || String(e), syncType: 'recommendation' } : f));
+      if (e.isAuthError && onAuthError) onAuthError();
+    }
+  }, [accessToken]);
+
+  return { fics, status, errorMsg, lastSynced, refresh: fetchFics, updateFic, retrySync, updateRecommendation };
 }
 
 function computePercentileRanks(values) {
@@ -332,6 +373,9 @@ function computePercentileRanks(values) {
   const denom = n > 1 ? n - 1 : 1;
   return ranks.map(r => (r / denom) * 100);
 }
+
+const ANONYMOUS_AUTHORS = new Set(['anonymous', 'orphan_account', 'orphan account']);
+function realAuthors(fic) { return fic.authors.filter(a => !ANONYMOUS_AUTHORS.has(a.trim().toLowerCase())); }
 
 function useComputedScores(fics) {
   return useMemo(() => {
@@ -356,9 +400,10 @@ function useComputedScores(fics) {
       qScore[i] = (pctlKH[i] * 1 + pctlKCH[i] * 1 + pctlBM[i] * 1.5 + pctlCO[i] * 1) / 4.5;
     }
 
-    // Full vocabulary — every tag/category that appears, no top-N cap
+    // Full vocabulary — every tag/category/author that appears, no top-N cap
     const tagStats = new Map(); // tag -> {readW, dnf, notInt}
     const catStats = new Map();
+    const authorStats = new Map();
 
     function bump(map, key, field, amount) {
       if (!map.has(key)) map.set(key, { readW: 0, dnf: 0, notInt: 0 });
@@ -371,6 +416,7 @@ function useComputedScores(fics) {
         const w = 1 + 0.5 * (kg[i] ? 1 : 0) + 1 * (bk[i] ? 1 : 0);
         for (const t of f.tags) bump(tagStats, t, 'readW', w);
         bump(catStats, f.category, 'readW', w);
+        for (const a of realAuthors(f)) bump(authorStats, a, 'readW', w);
       } else if (s === STATUS_DNF) {
         if (d === DNR_CONTENT_TAGS && f.dnrTags && f.dnrTags.length) {
           for (const t of f.dnrTags) bump(tagStats, t, 'dnf', 1);
@@ -378,6 +424,10 @@ function useComputedScores(fics) {
           for (const t of f.tags) bump(tagStats, t, 'dnf', 1);
         }
         if (d !== DNR_WRITING && d !== DNR_CONTENT_TAGS) bump(catStats, f.category, 'dnf', 1);
+        // Author affinity uses the opposite exclusion from tags: a Writing/Pacing DNF
+        // IS the author's fault and should count against them, while content-focused
+        // reasons (tags/category) shouldn't reflect on the author at all.
+        if (d !== DNR_CONTENT_TAGS && d !== DNR_CONTENT_CAT) for (const a of realAuthors(f)) bump(authorStats, a, 'dnf', 1);
       } else if (s === STATUS_NOTINT) {
         if (d === DNR_CONTENT_TAGS && f.dnrTags && f.dnrTags.length) {
           for (const t of f.dnrTags) bump(tagStats, t, 'notInt', 1);
@@ -385,6 +435,7 @@ function useComputedScores(fics) {
           for (const t of f.tags) bump(tagStats, t, 'notInt', 1);
         }
         if (d !== DNR_WRITING && d !== DNR_CONTENT_TAGS) bump(catStats, f.category, 'notInt', 1);
+        if (d !== DNR_CONTENT_TAGS && d !== DNR_CONTENT_CAT) for (const a of realAuthors(f)) bump(authorStats, a, 'notInt', 1);
       }
     }
 
@@ -407,7 +458,15 @@ function useComputedScores(fics) {
       const ad = tCount > 0 ? tSum / tCount : 0;
 
       const { affinity: ae } = affinityOf(catStats, f.category, 0.5);
-      pScore[i] = qScore[i] * (1 + 0.6 * ad) * (1 + 0.3 * Math.max(0, ae));
+
+      let auSum = 0, auCount = 0;
+      for (const a of realAuthors(f)) {
+        const { affinity, totalRated } = affinityOf(authorStats, a, 0.5);
+        if (totalRated > 0) { auSum += affinity; auCount++; }
+      }
+      const au = auCount > 0 ? auSum / auCount : 0;
+
+      pScore[i] = qScore[i] * (1 + 0.6 * ad) * (1 + 0.3 * Math.max(0, ae)) * (1 + 0.9 * Math.max(0, au));
     }
 
     return { status, dnr, kg, bk, pScore, qScore };
@@ -453,7 +512,7 @@ function StatusPicker({ ficId, status, dnr, dnrTags, kg, bk, tags, onUpdate }) {
   return (
     <div className="mt-3">
       <div className="flex flex-wrap gap-1.5">
-        {[STATUS_UNREAD, STATUS_READING, STATUS_READ, STATUS_DNF, STATUS_SKIPPED, STATUS_NOTINT].map(s => (
+        {[STATUS_UNREAD, STATUS_TBR, STATUS_READING, STATUS_READ, STATUS_DNF, STATUS_SKIPPED, STATUS_NOTINT].map(s => (
           <Chip key={s} active={status === s} onClick={() => setStatus(s)} color={STATUS_COLOR[s]}>{STATUS_LABELS[s]}</Chip>
         ))}
       </div>
@@ -517,7 +576,32 @@ function StatusPicker({ ficId, status, dnr, dnrTags, kg, bk, tags, onUpdate }) {
   );
 }
 
-function FicCard({ fic, scores, ficIndex, onUpdate, onRetry, expanded, onToggleExpand }) {
+function RecommendToggle({ ficId, recommended, recSource, onUpdate }) {
+  const [picking, setPicking] = useState(false);
+  const toggle = () => {
+    if (recommended) onUpdate(ficId, { recommended: false, recSource: '' });
+    else setPicking(true);
+  };
+  const pick = (source) => {
+    onUpdate(ficId, { recommended: true, recSource: source });
+    setPicking(false);
+  };
+  return (
+    <div>
+      <button onClick={toggle} className="p-1.5 -m-1.5 rounded-full active:scale-95" aria-label={recommended ? 'Remove recommendation mark' : 'Mark as recommended'}>
+        <Megaphone size={18} color={recommended ? COLORS.recGold : COLORS.inkSoft} />
+      </button>
+      {picking && (
+        <div className="absolute right-4 mt-1 p-2 rounded-lg flex gap-2 z-20" style={{ backgroundColor: COLORS.paperCard, border: `1px solid ${COLORS.line}` }}>
+          <button onClick={() => pick('Social Media')} className="text-xs px-2.5 py-1.5 rounded-full border font-medium" style={{ borderColor: COLORS.line, color: COLORS.ink }}>Social Media</button>
+          <button onClick={() => pick('Personal')} className="text-xs px-2.5 py-1.5 rounded-full border font-medium" style={{ borderColor: COLORS.line, color: COLORS.ink }}>Personal</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FicCard({ fic, scores, ficIndex, onUpdate, onRetry, onUpdateRecommendation, expanded, onToggleExpand }) {
   const status = scores.status[ficIndex];
   const pScore = scores.pScore[ficIndex];
   const [tagsExpanded, setTagsExpanded] = useState(false);
@@ -528,10 +612,15 @@ function FicCard({ fic, scores, ficIndex, onUpdate, onRetry, expanded, onToggleE
   const summaryText = summaryExpanded || !summaryIsLong ? fic.summary : fic.summary.slice(0, SUMMARY_PREVIEW_LEN) + '…';
 
   return (
-    <div className="rounded-md p-4 mb-3" style={{ backgroundColor: status === STATUS_READ ? '#F1F8F4' : COLORS.paperCard, border: `1px solid ${COLORS.line}`, borderLeft: `4px solid ${STATUS_COLOR[status]}` }}>
+    <div className="relative rounded-md p-4 mb-3" style={{ backgroundColor: status === STATUS_READ ? '#F1F8F4' : COLORS.paperCard, border: `1px solid ${COLORS.line}`, borderLeft: `4px solid ${STATUS_COLOR[status]}` }}>
       <div className="flex items-center gap-2 mb-1.5">
         {status !== STATUS_UNREAD && (
           <span className="inline-block text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full" style={{ backgroundColor: STATUS_COLOR[status], color: '#FFFFFF' }}>{STATUS_LABELS[status]}</span>
+        )}
+        {fic.recommended && (
+          <span className="inline-block text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full" style={{ backgroundColor: COLORS.recGold, color: '#FFFFFF' }}>
+            Recommended{fic.recSource ? ` · ${fic.recSource}` : ''}
+          </span>
         )}
         {fic.syncState === 'syncing' && (
           <span className="text-[10px]" style={{ color: COLORS.inkSoft }}>Saving to sheet…</span>
@@ -545,13 +634,19 @@ function FicCard({ fic, scores, ficIndex, onUpdate, onRetry, expanded, onToggleE
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <h3 className="text-lg leading-snug" style={{ color: COLORS.ink, fontFamily: "'Lora', serif", fontWeight: 600 }}>{fic.title}</h3>
+          {fic.authors.length > 0 && (
+            <p className="text-xs italic" style={{ color: COLORS.inkSoft }}>by {fic.authors.join(', ')}</p>
+          )}
           <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>
             {fic.rating} · {fic.category} · {fic.words.toLocaleString()}w{fic.chapters > 1 ? ` · ${fic.chapters} ch` : ''} · {fic.date}
           </p>
         </div>
-        <div className="shrink-0 text-right">
-          <div className="text-lg font-bold" style={{ color: COLORS.maroon, fontFamily: "'Lora', serif" }}>{pScore.toFixed(0)}</div>
-          <div className="text-[9px] uppercase tracking-wide" style={{ color: COLORS.inkSoft }}>score</div>
+        <div className="shrink-0 flex items-start gap-2">
+          <RecommendToggle ficId={fic.id} recommended={fic.recommended} recSource={fic.recSource} onUpdate={onUpdateRecommendation} />
+          <div className="text-right">
+            <div className="text-lg font-bold" style={{ color: COLORS.maroon, fontFamily: "'Lora', serif" }}>{pScore.toFixed(0)}</div>
+            <div className="text-[9px] uppercase tracking-wide" style={{ color: COLORS.inkSoft }}>score</div>
+          </div>
         </div>
       </div>
 
@@ -673,7 +768,7 @@ function ExportPanel({ fics, onClose }) {
 
 function HollanovRolladexLive() {
   const { accessToken, gisReady, signIn, signOut, authError } = useGoogleAuth();
-  const { fics, status: syncStatus, errorMsg, lastSynced, refresh, updateFic, retrySync } = useSheetFics(accessToken, signOut);
+  const { fics, status: syncStatus, errorMsg, lastSynced, refresh, updateFic, retrySync, updateRecommendation } = useSheetFics(accessToken, signOut);
   const scores = useComputedScores(fics);
 
   const [search, setSearch] = useState('');
@@ -684,6 +779,7 @@ function HollanovRolladexLive() {
   const [tagQuery, setTagQuery] = useState('');
   const [excludedTags, setExcludedTags] = useState([]);
   const [excludeTagQuery, setExcludeTagQuery] = useState('');
+  const [recommendedOnly, setRecommendedOnly] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [sortBy, setSortBy] = useState('score');
   const [expandedId, setExpandedId] = useState(null);
@@ -740,10 +836,12 @@ function HollanovRolladexLive() {
       }
       if (selectedTags.length && !selectedTags.every(t => f.tags.includes(t))) continue;
       if (excludedTags.length && excludedTags.some(t => f.tags.includes(t))) continue;
+      if (recommendedOnly && !f.recommended) continue;
       if (q) {
         const titleMatch = f.title.toLowerCase().includes(q);
         const tagMatch = f.tags.some(t => t.toLowerCase().includes(q));
-        if (!titleMatch && !tagMatch) continue;
+        const authorMatch = f.authors.some(a => a.toLowerCase().includes(q));
+        if (!titleMatch && !tagMatch && !authorMatch) continue;
       }
       indices.push(i);
     }
@@ -752,7 +850,7 @@ function HollanovRolladexLive() {
     else if (sortBy === 'recent') indices.sort((a, b) => (fics[b].date || '').localeCompare(fics[a].date || ''));
     else if (sortBy === 'kudos') indices.sort((a, b) => fics[b].kudos - fics[a].kudos);
     return indices;
-  }, [fics, scores, search, statusFilter, ratingFilter, wordFilter, selectedTags, excludedTags, sortBy]);
+  }, [fics, scores, search, statusFilter, ratingFilter, wordFilter, selectedTags, excludedTags, recommendedOnly, sortBy]);
 
   useEffect(() => { setVisibleCount(PAGE_SIZE); }, [search, statusFilter, ratingFilter, wordFilter, sortBy]);
 
@@ -767,7 +865,7 @@ function HollanovRolladexLive() {
     <div className="h-screen w-full flex flex-col overflow-hidden" style={{ backgroundColor: COLORS.paper, fontFamily: "'Inter', system-ui, sans-serif" }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Lora:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap');`}</style>
 
-      <div className="px-4 pt-4 pb-3 shrink-0" style={{ borderBottom: `2px solid ${COLORS.maroon}` }}>
+      <div className="px-4 pt-4 pb-3 shrink-0 overflow-y-auto" style={{ borderBottom: `2px solid ${COLORS.maroon}`, maxHeight: '70vh' }}>
         <div className="flex items-baseline justify-between">
           <h1 className="text-2xl tracking-tight" style={{ color: COLORS.ink, fontFamily: "'Lora', serif", fontWeight: 700 }}>Hollanov Fics List</h1>
           <div className="flex items-center gap-2">
@@ -818,9 +916,10 @@ function HollanovRolladexLive() {
             style={{ backgroundColor: filtersOpen ? COLORS.ink : COLORS.paperCard, color: filtersOpen ? COLORS.paperCard : COLORS.ink, border: `1px solid ${COLORS.line}` }}>
             <SlidersHorizontal size={14} /> Filters {activeFilterCount > 0 ? `(${activeFilterCount})` : ''}
           </button>
-          {[STATUS_UNREAD, STATUS_READING, STATUS_READ, STATUS_DNF, STATUS_SKIPPED, STATUS_NOTINT].map(s => (
+          {[STATUS_UNREAD, STATUS_TBR, STATUS_READING, STATUS_READ, STATUS_DNF, STATUS_SKIPPED, STATUS_NOTINT].map(s => (
             <Chip key={s} active={statusFilter.has(s)} onClick={() => toggleSetValue(setStatusFilter, statusFilter, s)} color={STATUS_COLOR[s]}>{STATUS_LABELS[s]}</Chip>
           ))}
+          <Chip active={recommendedOnly} onClick={() => setRecommendedOnly(v => !v)} color={COLORS.recGold}>Recommended</Chip>
         </div>
 
         <div className="mt-2 flex items-center gap-2">
@@ -904,7 +1003,7 @@ function HollanovRolladexLive() {
         {syncStatus === 'loading' && fics.length === 0 && (<div className="text-center mt-16" style={{ color: COLORS.inkSoft }}><p className="text-sm">Loading your fic list…</p></div>)}
         {visible.length === 0 && syncStatus !== 'loading' && (<div className="text-center mt-16" style={{ color: COLORS.inkSoft }}><p className="text-sm">No fics match these filters.</p></div>)}
         {scores && visible.map(idx => (
-          <FicCard key={fics[idx].id} fic={fics[idx]} ficIndex={idx} scores={scores} onUpdate={updateFic} onRetry={retrySync}
+          <FicCard key={fics[idx].id} fic={fics[idx]} ficIndex={idx} scores={scores} onUpdate={updateFic} onRetry={retrySync} onUpdateRecommendation={updateRecommendation}
             expanded={expandedId === fics[idx].id} onToggleExpand={(id) => setExpandedId(prev => (prev === id ? null : id))} />
         ))}
         {visibleCount < filteredIndices.length && (
