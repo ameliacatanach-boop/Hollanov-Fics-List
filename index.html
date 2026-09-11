@@ -265,6 +265,9 @@ async function sheetsApiWriteStatus(accessToken, rowNumber, { status, dnr, kg, b
 }
 
 async function sheetsApiWriteRecommendation(accessToken, rowNumber, { recommended, recSource }, recCol, recSourceCol) {
+  if (!recCol && !recSourceCol) {
+    throw new Error('Could not find a "Recommended" or "Rec Source" column in your sheet — check the exact column header spelling (case-sensitive).');
+  }
   if (recCol) await sheetsApiWriteCell(accessToken, rowNumber, recCol, recommended ? 'Y' : '');
   if (recSourceCol) await sheetsApiWriteCell(accessToken, rowNumber, recSourceCol, recommended ? (recSource || '') : '');
 }
