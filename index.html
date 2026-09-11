@@ -629,9 +629,14 @@ function FicCard({ fic, scores, ficIndex, onUpdate, onRetry, onUpdateRecommendat
           <span className="text-[10px]" style={{ color: COLORS.inkSoft }}>Saving to sheet…</span>
         )}
         {fic.syncState === 'error' && (
-          <button onClick={() => onRetry(fic.id)} className="text-[10px] font-semibold underline" style={{ color: COLORS.maroon }}>
-            Save failed — tap to retry
-          </button>
+          <div className="flex flex-col">
+            <button onClick={() => onRetry(fic.id)} className="text-[10px] font-semibold underline text-left" style={{ color: COLORS.maroon }}>
+              Save failed — tap to retry
+            </button>
+            {fic.syncError && (
+              <span className="text-[10px]" style={{ color: COLORS.maroon }}>{fic.syncError}</span>
+            )}
+          </div>
         )}
       </div>
       <div className="flex items-start justify-between gap-2">
