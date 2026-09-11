@@ -218,7 +218,7 @@ async function fetchWithTimeout(url, options, timeoutMs) {
 }
 
 async function sheetsApiGet(accessToken) {
-  const range = encodeURIComponent(`'${SHEET_TAB}'!A1:AH`);
+  const range = encodeURIComponent(`'${SHEET_TAB}'!A1:ZZ`);
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${range}`;
   const res = await fetchWithTimeout(url, { headers: { Authorization: `Bearer ${accessToken}` } }, 20000);
   if (!res.ok) {
