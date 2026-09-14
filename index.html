@@ -380,6 +380,23 @@ function computePercentileRanks(values) {
 const ANONYMOUS_AUTHORS = new Set(['anonymous', 'orphan_account', 'orphan account']);
 function realAuthors(fic) { return fic.authors.filter(a => !ANONYMOUS_AUTHORS.has(a.trim().toLowerCase())); }
 
+const MONTH_MAP = { Jan:0, Feb:1, Mar:2, Apr:3, May:4, Jun:5, Jul:6, Aug:7, Sep:8, Oct:9, Nov:10, Dec:11 };
+function parseFicDate(str) {
+  if (!str) return 0;
+  const s = str.trim();
+  const m = /^(\d{1,2})-([A-Za-z]{3})-(\d{2,4})$/.exec(s);
+  if (m) {
+    const day = parseInt(m[1], 10);
+    const month = MONTH_MAP[m[2]];
+    let year = parseInt(m[3], 10);
+    if (year < 100) year += 2000;
+    if (month === undefined) return 0;
+    return new Date(year, month, day).getTime();
+  }
+  const t = Date.parse(s);
+  return isNaN(t) ? 0 : t;
+}
+
 function useComputedScores(fics) {
   return useMemo(() => {
     if (fics.length === 0) return null;
@@ -855,7 +872,7 @@ function HollanovRolladexLive() {
     }
     if (sortBy === 'score') indices.sort((a, b) => scores.pScore[b] - scores.pScore[a]);
     else if (sortBy === 'qscore') indices.sort((a, b) => scores.qScore[b] - scores.qScore[a]);
-    else if (sortBy === 'recent') indices.sort((a, b) => (fics[b].date || '').localeCompare(fics[a].date || ''));
+    else if (sortBy === 'recent') indices.sort((a, b) => parseFicDate(fics[b].date) - parseFicDate(fics[a].date));
     else if (sortBy === 'kudos') indices.sort((a, b) => fics[b].kudos - fics[a].kudos);
     return indices;
   }, [fics, scores, search, statusFilter, ratingFilter, wordFilter, selectedTags, excludedTags, recommendedOnly, sortBy]);
