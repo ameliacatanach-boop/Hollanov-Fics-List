@@ -463,30 +463,56 @@ function useComputedScores(fics) {
       const s = map.get(key);
       if (!s) return { affinity: 0, totalRated: 0 };
       const totalRated = s.readW + s.dnf + s.notInt;
-      const affinity = totalRated === 0 ? 0 : (s.readW - s.dnf * dnfWeight - s.notInt) / totalRated;
+      const rawAffinity = totalRated === 0 ? 0 : (s.readW - s.dnf * dnfWeight - s.notInt) / totalRated;
+      // Confidence shrinkage: a tag/ship/category/author with little evidence behind it
+      // gets pulled toward neutral, so one early DNF can't swing it as hard as a
+      // pattern backed by a dozen ratings. C=3 means ~1 rating -> 1/4 strength,
+      // ~3 ratings -> half strength, approaching full strength as evidence grows.
+      const C = 3;
+      const confidence = totalRated / (totalRated + C);
+      const affinity = rawAffinity * confidence;
       return { affinity, totalRated };
     }
 
     const pScore = new Array(n);
     for (let i = 0; i < n; i++) {
       const f = fics[i];
-      let tSum = 0, tCount = 0;
+
+      // Fix 3: strength-weighted average — a tag you feel strongly about (positive
+      // or negative) pulls harder than tags you're merely neutral on, instead of
+      // every rated tag counting equally and averaging strong signals away.
+      let tSum = 0, tWeight = 0, tCount = 0;
       for (const t of f.tags) {
         const { affinity, totalRated } = affinityOf(tagStats, t, 0.5);
-        if (totalRated > 0) { tSum += affinity; tCount++; }
+        if (totalRated > 0) { tCount++; tSum += affinity * Math.abs(affinity); tWeight += Math.abs(affinity); }
       }
-      const ad = tCount > 0 ? tSum / tCount : 0;
+      const tagHasData = tCount > 0;
+      const ad = tWeight > 0 ? tSum / tWeight : 0;
 
-      const { affinity: ae } = affinityOf(catStats, f.category, 0.5);
+      const { affinity: aeRaw, totalRated: catTotalRated } = affinityOf(catStats, f.category, 0.5);
+      const catHasData = catTotalRated > 0;
+      const ae = Math.max(0, aeRaw);
 
-      let auSum = 0, auCount = 0;
+      let auSum = 0, auWeight = 0, auCount = 0;
       for (const a of realAuthors(f)) {
         const { affinity, totalRated } = affinityOf(authorStats, a, 0.5);
-        if (totalRated > 0) { auSum += affinity; auCount++; }
+        if (totalRated > 0) { auCount++; auSum += affinity * Math.abs(affinity); auWeight += Math.abs(affinity); }
       }
-      const au = auCount > 0 ? auSum / auCount : 0;
+      const authorHasData = auCount > 0;
+      const auRaw = auWeight > 0 ? auSum / auWeight : 0;
+      const au = Math.max(0, auRaw);
 
-      pScore[i] = qScore[i] * (1 + 0.6 * ad) * (1 + 0.3 * Math.max(0, ae)) * (1 + 0.9 * Math.max(0, au));
+      // Fix 2: combine the active dimensions into ONE weighted-average adjustment
+      // instead of multiplying independent (1 + weight*affinity) factors together.
+      // Multiplying let two negative signals compound harder than either alone
+      // intended; averaging lets multiple signals blend instead.
+      let weightSum = 0, adjSum = 0;
+      if (tagHasData) { weightSum += 0.6; adjSum += 0.6 * ad; }
+      if (catHasData) { weightSum += 0.3; adjSum += 0.3 * ae; }
+      if (authorHasData) { weightSum += 0.9; adjSum += 0.9 * au; }
+      const combinedAdjustment = weightSum > 0 ? adjSum / weightSum : 0;
+
+      pScore[i] = qScore[i] * (1 + combinedAdjustment);
     }
 
     return { status, dnr, kg, bk, pScore, qScore };
