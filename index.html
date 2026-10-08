@@ -787,7 +787,7 @@ function FicCard({ fic, scores, ficIndex, onUpdate, onRetry, onUpdateRecommendat
 
       {fic.summary && (
         <div className="mt-3">
-          <p className="text-sm leading-snug" style={{ color: COLORS.inkSoft, fontFamily: "'Lora', serif" }}>{summaryText}</p>
+          <p className="text-sm leading-snug" style={{ color: COLORS.inkSoft, fontFamily: "'Lora', serif", whiteSpace: 'pre-line' }}>{summaryText}</p>
           {summaryIsLong && (
             <button onClick={() => setSummaryExpanded(v => !v)} className="text-xs font-medium mt-1" style={{ color: COLORS.maroon }}>
               {summaryExpanded ? 'Show less' : 'Show more'}
