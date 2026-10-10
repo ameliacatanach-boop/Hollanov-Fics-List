@@ -517,6 +517,7 @@ function useSheetFics(accessToken, onAuthError) {
   const stepPendingRef = useRef({}); // ficId -> { chaptersRead, lastRead, timer } waiting on the tap debounce
   const updateFicRef = useRef(null);
   const [readingMissing, setReadingMissing] = useState([]);
+  const [logMissing, setLogMissing] = useState(false);
   useEffect(() => { ficsRef.current = fics; }, [fics]);
 
   // Reads the Reading Log once per load so "one Progress row per fic per day" holds across
@@ -526,7 +527,8 @@ function useSheetFics(accessToken, onAuthError) {
     logRef.current = { available: true, progressKeys: new Set() };
     try {
       const rows = await sheetsApiGetLog(accessToken);
-      if (rows === null) { logRef.current.available = false; return; }
+      if (rows === null) { logRef.current.available = false; setLogMissing(true); return; }
+      setLogMissing(false);
       rows.forEach(r => {
         if (r[3] === 'Progress') logRef.current.progressKeys.add(`${r[1]}|${String(r[0] || '').slice(0, 10)}`);
       });
@@ -603,6 +605,7 @@ function useSheetFics(accessToken, onAuthError) {
         readingCols: readingColsRef.current, log: logRef.current,
       };
       await persistFicChange(ctx, prevFic, patch, transition, now);
+      if (logRef.current.available === false) setLogMissing(true);
       setFics(prev => prev.map(f => f.id === ficId ? { ...f, syncState: 'idle' } : f));
     } catch (e) {
       // retryPatch lets "tap to retry" re-apply the change that failed (the card itself rolls back).
@@ -667,7 +670,7 @@ function useSheetFics(accessToken, onAuthError) {
     }
   }, [accessToken]);
 
-  return { fics, status, errorMsg, lastSynced, refresh: fetchFics, updateFic, retrySync, updateRecommendation, stepChapters, readingMissing };
+  return { fics, status, errorMsg, lastSynced, refresh: fetchFics, updateFic, retrySync, updateRecommendation, stepChapters, readingMissing, logMissing };
 }
 
 function computePercentileRanks(values) {
@@ -1302,7 +1305,7 @@ function ExportPanel({ fics, onClose }) {
 
 function HollanovRolladexLive() {
   const { accessToken, gisReady, signIn, signOut, authError } = useGoogleAuth();
-  const { fics, status: syncStatus, errorMsg, lastSynced, refresh, updateFic, retrySync, updateRecommendation, stepChapters, readingMissing } = useSheetFics(accessToken, signOut);
+  const { fics, status: syncStatus, errorMsg, lastSynced, refresh, updateFic, retrySync, updateRecommendation, stepChapters, readingMissing, logMissing } = useSheetFics(accessToken, signOut);
   const scores = useComputedScores(fics);
 
   const [search, setSearch] = useState('');
@@ -1431,6 +1434,14 @@ function HollanovRolladexLive() {
         {failedSyncCount > 0 && (
           <div className="mt-2 p-2.5 rounded-lg text-xs font-medium" style={{ backgroundColor: '#FBEAEA', color: COLORS.maroon }}>
             {failedSyncCount} fic{failedSyncCount === 1 ? '' : 's'} failed to save to your sheet — scroll down to find the red "tap to retry" note on each.
+          </div>
+        )}
+        {(readingMissing.length > 0 || logMissing) && (
+          <div className="mt-2 p-2.5 rounded-lg text-xs" style={{ backgroundColor: '#FFF6E0', color: '#7A5A10', border: '1px solid #E8D5A0' }}>
+            Reading tracker isn't fully set up, so some things aren't being saved:
+            {readingMissing.length > 0 && <> no column named {readingMissing.map(c => `"${c}"`).join(', ')}.</>}
+            {logMissing && <> no tab named "Reading Log".</>}
+            {' '}Names must match exactly, including capitalisation and spacing.
           </div>
         )}
         {syncingCount > 0 && failedSyncCount === 0 && (
