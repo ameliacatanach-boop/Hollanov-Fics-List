@@ -44,13 +44,13 @@ function Download(props) { return <svg xmlns="http://www.w3.org/2000/svg" width=
 function StarIcon(props) { return <svg xmlns="http://www.w3.org/2000/svg" width={props.size||16} height={props.size||16} viewBox="0 0 24 24" fill={props.fill||"none"} stroke={props.color||"currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>; }
 function Megaphone(props) { return <svg xmlns="http://www.w3.org/2000/svg" width={props.size||16} height={props.size||16} viewBox="0 0 24 24" fill={props.fill||"none"} stroke={props.color||"currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>; }
 
-const STATUS_LABELS = ['Unread', 'Read', 'DNF', 'Skipped', 'Not Interested', 'Currently Reading', 'TBR'];
-const STATUS_UNREAD=0, STATUS_READ=1, STATUS_DNF=2, STATUS_SKIPPED=3, STATUS_NOTINT=4, STATUS_READING=5, STATUS_TBR=6;
+const STATUS_LABELS = ['Unread', 'Read', 'DNF', 'Skipped', 'Not Interested', 'Currently Reading', 'TBR', 'Paused'];
+const STATUS_UNREAD=0, STATUS_READ=1, STATUS_DNF=2, STATUS_SKIPPED=3, STATUS_NOTINT=4, STATUS_READING=5, STATUS_TBR=6, STATUS_PAUSED=7;
 const DNR_LABELS = { 0: '—', 1: 'Writing/Pacing', 2: 'Content', 3: 'Other', 10: 'Content/Tags', 12: 'Content/Category' };
 const DNR_WRITING=1, DNR_CONTENT=2, DNR_OTHER=3;
 const DNR_LEGACY_CONTENT_TAGS=10, DNR_LEGACY_CONTENT_CAT=12;
 
-const STATUS_CODE_MAP = { '': 0, 'Read': 1, 'DNF': 2, 'Skipped': 3, 'Not Interested': 4, 'Currently Reading': 5, 'TBR': 6 };
+const STATUS_CODE_MAP = { '': 0, 'Read': 1, 'DNF': 2, 'Skipped': 3, 'Not Interested': 4, 'Currently Reading': 5, 'TBR': 6, 'Paused': 7 };
 const DNR_CODE_MAP = { '': 0, 'Writing/Pacing': 1, 'Content': 2, 'Other': 3, 'Content/Tags': 10, 'Content/Category': 12 };
 
 const ENJOYMENT_MULTIPLIER = { 0: 1, 1: 0.25, 2: 0.6, 3: 1, 4: 1.5, 5: 2 };
@@ -59,12 +59,12 @@ const COLORS = {
   paper: '#EFEAE0', paperCard: '#FFFFFF', ink: '#231F20', inkSoft: '#75706A',
   maroon: '#7A1F1F', maroonDark: '#5C1616', gold: '#9C7A3C', line: '#DCD4C4',
   readGreen: '#3F6B4A', dnfPurple: '#6C5A8E', skipOrange: '#B5702B', notIntGray: '#948B84',
-  tbrBlue: '#3D5A73', recGold: '#C9A227',
+  tbrBlue: '#3D5A73', recGold: '#C9A227', pausedSlate: '#6F7F8C',
 };
 const STATUS_COLOR = {
   [STATUS_UNREAD]: COLORS.inkSoft, [STATUS_READ]: COLORS.readGreen, [STATUS_DNF]: COLORS.dnfPurple,
   [STATUS_SKIPPED]: COLORS.skipOrange, [STATUS_NOTINT]: COLORS.notIntGray, [STATUS_READING]: COLORS.gold,
-  [STATUS_TBR]: COLORS.tbrBlue,
+  [STATUS_TBR]: COLORS.tbrBlue, [STATUS_PAUSED]: COLORS.pausedSlate,
 };
 
 const WORD_BUCKETS = [
@@ -184,6 +184,11 @@ function ficFromRow(headerIndex, row, rowNumber) {
     dnr: DNR_CODE_MAP[get('DNR Reason').trim()] ?? 0,
     dnrTags, dnrCategory,
     enjoyment,
+    dateStarted: normIsoDate(get('Date Started')),
+    dateRead: normIsoDate(get('Date Read')),
+    lastRead: get('Last Read').trim(),
+    chaptersRead: num(get('Chapters Read')),
+    timesRead: num(get('Times Read')),
     kg: get('K').trim().toUpperCase() === 'Y',
     bk: get('B').trim().toUpperCase() === 'Y',
     recommended: get('Recommended').trim().toUpperCase() === 'Y',
@@ -273,7 +278,7 @@ async function sheetsApiWriteStatus(accessToken, rowNumber, { status, dnr, kg, b
     await sheetsApiWriteCell(accessToken, rowNumber, dnrCategoryCol, dnrCategory ? 'Y' : '');
   }
   if (enjoymentCol) {
-    await sheetsApiWriteCell(accessToken, rowNumber, enjoymentCol, (status === STATUS_READ && enjoyment) ? String(enjoyment) : '');
+    await sheetsApiWriteCell(accessToken, rowNumber, enjoymentCol, ((status === STATUS_READ || status === STATUS_READING || status === STATUS_PAUSED) && enjoyment) ? String(enjoyment) : '');
   }
 }
 
@@ -284,6 +289,217 @@ async function sheetsApiWriteRecommendation(accessToken, rowNumber, { recommende
   if (recCol) await sheetsApiWriteCell(accessToken, rowNumber, recCol, recommended ? 'Y' : '');
   if (recSourceCol) await sheetsApiWriteCell(accessToken, rowNumber, recSourceCol, recommended ? (recSource || '') : '');
 }
+
+// <reading-feature>
+// Reading-history tracking: dates, chapters, the append-only "Reading Log" tab.
+// Everything here is plain JS (no React) so the logic can be tested on its own.
+const READING_FIELD_KEYS = ['dateStarted', 'dateRead', 'lastRead', 'chaptersRead', 'timesRead'];
+const READING_COL_NAMES = { dateStarted: 'Date Started', dateRead: 'Date Read', lastRead: 'Last Read', chaptersRead: 'Chapters Read', timesRead: 'Times Read' };
+const STATUS_WRITE_KEYS = ['status', 'dnr', 'kg', 'bk', 'dnrTags', 'dnrCategory', 'enjoyment'];
+const LOG_TAB = 'Reading Log';
+const LOG_TZ = 'Australia/Melbourne';
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// "Today" and timestamps are always Melbourne time, whatever timezone the device is in.
+function melbourneNow(d) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: LOG_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(d || new Date());
+  const p = {};
+  parts.forEach(x => { if (x.type !== 'literal') p[x.type] = x.value; });
+  const date = `${p.year}-${p.month}-${p.day}`;
+  return { date, stamp: `${date} ${p.hour}:${p.minute}` };
+}
+
+// Dates are written as plain-text ISO, but a cell someone typed by hand can come back in
+// the sheet's display format — accept the common ones, and keep anything else as typed.
+function normIsoDate(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return '';
+  let m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s); // d/m/yyyy (Australian order)
+  if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  m = /^(\d{1,2})-([A-Za-z]{3})-(\d{2,4})$/.exec(s);
+  if (m) {
+    const mon = m[2][0].toUpperCase() + m[2].slice(1).toLowerCase();
+    if (MONTH_MAP[mon] !== undefined) {
+      let y = parseInt(m[3], 10);
+      if (y < 100) y += 2000;
+      return `${y}-${String(MONTH_MAP[mon] + 1).padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+    }
+  }
+  return s;
+}
+
+function fmtShortDate(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
+  if (!m) return iso || '';
+  const thisYear = melbourneNow().date.slice(0, 4);
+  return `${parseInt(m[3], 10)} ${MONTH_NAMES[parseInt(m[2], 10) - 1]}${m[1] === thisYear ? '' : ' ' + m[1]}`;
+}
+
+function ordinal(n) {
+  const v = n % 100;
+  if (v >= 11 && v <= 13) return `${n}th`;
+  return `${n}${({ 1: 'st', 2: 'nd', 3: 'rd' })[n % 10] || 'th'}`;
+}
+
+// The dates line shown under the Kudos/Bookmarked/Enjoyment summary in the expanded card.
+function readingDatesLine(status, f) {
+  const parts = [];
+  if (status === STATUS_READ) {
+    if (f.dateStarted) parts.push(`Started ${fmtShortDate(f.dateStarted)}`);
+    if (f.dateRead) parts.push(`Read ${fmtShortDate(f.dateRead)}`);
+    if (f.timesRead >= 2) parts.push(`Read ${f.timesRead}×`);
+  } else if (status === STATUS_READING || status === STATUS_PAUSED) {
+    if (f.dateStarted) parts.push(`Started ${fmtShortDate(f.dateStarted)}`);
+    if (f.timesRead >= 2) parts.push(`${ordinal(f.timesRead)} read`);
+  } else if (status === STATUS_DNF) {
+    if (f.dateStarted) parts.push(`Started ${fmtShortDate(f.dateStarted)}`);
+  }
+  return parts.join(' · ');
+}
+
+// Given a fic's state before a change and the patch being applied, work out which reading
+// fields change as a side effect and which Reading Log events to append. Pure function.
+// `now` = { date: 'YYYY-MM-DD', stamp: 'YYYY-MM-DD HH:MM' } in Melbourne time.
+function computeReadingTransition(prev, patch, now) {
+  const fields = {};
+  const events = [];
+  const isActive = (s) => s === STATUS_READING || s === STATUS_PAUSED;
+  const readNo = (n) => n || 1;
+  const from = prev.status;
+  const to = patch.status === undefined ? from : patch.status;
+
+  // No status change: a chapter-count update on an in-progress fic logs a Progress event
+  // (the once-per-day cap is applied when the event is appended).
+  if (to === from) {
+    if (patch.chaptersRead !== undefined && isActive(from)) {
+      events.push({ event: 'Progress', chaptersRead: patch.chaptersRead, readNumber: readNo(prev.timesRead) });
+    }
+    return { fields, events };
+  }
+
+  const chaptersNow = patch.chaptersRead !== undefined ? patch.chaptersRead : (prev.chaptersRead || 0);
+
+  if (to === STATUS_READING) {
+    if (from === STATUS_READ) { // Read again
+      const n = (prev.timesRead || 1) + 1;
+      Object.assign(fields, { timesRead: n, chaptersRead: 0, dateStarted: now.date, lastRead: now.stamp });
+      events.push({ event: 'Re-read started', chaptersRead: 0, readNumber: n });
+    } else if (from === STATUS_PAUSED) { // Resume
+      fields.lastRead = now.stamp;
+      events.push({ event: 'Progress', chaptersRead: chaptersNow, readNumber: readNo(prev.timesRead) });
+    } else { // Start reading
+      Object.assign(fields, { dateStarted: now.date, lastRead: now.stamp });
+      events.push({ event: 'Started', chaptersRead: chaptersNow, readNumber: readNo(prev.timesRead) });
+    }
+  } else if (to === STATUS_PAUSED) {
+    fields.lastRead = now.stamp;
+    events.push({ event: 'Paused', chaptersRead: chaptersNow, readNumber: readNo(prev.timesRead) });
+  } else if (to === STATUS_READ) {
+    const times = prev.timesRead || 1;
+    Object.assign(fields, { dateRead: now.date, lastRead: now.stamp, timesRead: times });
+    // Finishing a fic that was in progress means everything published so far is read.
+    if (isActive(from) && prev.chapters && chaptersNow < prev.chapters) fields.chaptersRead = prev.chapters;
+    events.push({ event: 'Finished', chaptersRead: fields.chaptersRead !== undefined ? fields.chaptersRead : chaptersNow, readNumber: times });
+  } else if (to === STATUS_DNF) {
+    fields.lastRead = now.stamp;
+    events.push({ event: 'DNF', chaptersRead: chaptersNow, readNumber: readNo(prev.timesRead) });
+  }
+  return { fields, events };
+}
+
+async function sheetsApiWriteReadingFields(accessToken, rowNumber, values, keys, cols) {
+  const data = [];
+  for (const k of keys) {
+    const col = cols && cols[k];
+    if (!col) continue; // column missing from the sheet: skip this field silently
+    let v = values[k];
+    if (v === undefined || v === null || (k === 'timesRead' && !v)) v = '';
+    data.push({ range: `'${SHEET_TAB}'!${col}${rowNumber}`, values: [[v]] });
+  }
+  if (!data.length) return;
+  // RAW so Sheets keeps dates/timestamps as the exact text written, never reinterpreting them.
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values:batchUpdate`;
+  const res = await fetchWithTimeout(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ valueInputOption: 'RAW', data }),
+  }, 15000);
+  if (!res.ok) throw authFetchError(res.status, await res.text());
+}
+
+async function sheetsApiGetLog(accessToken) {
+  const range = encodeURIComponent(`'${LOG_TAB}'!A:F`);
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${range}`;
+  const res = await fetchWithTimeout(url, { headers: { Authorization: `Bearer ${accessToken}` } }, 20000);
+  if (!res.ok) {
+    const body = await res.text();
+    if (res.status === 400 && /unable to parse range|not found/i.test(body)) return null; // tab missing
+    throw authFetchError(res.status, body);
+  }
+  const data = await res.json();
+  return data.values || [];
+}
+
+async function sheetsApiAppendLog(accessToken, rows) {
+  const range = encodeURIComponent(`'${LOG_TAB}'!A:F`);
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${range}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`;
+  const res = await fetchWithTimeout(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ values: rows }),
+  }, 15000);
+  if (!res.ok) {
+    const body = await res.text();
+    const err = authFetchError(res.status, body);
+    if (res.status === 400 && /unable to parse range|not found/i.test(body)) err.isLogTabMissing = true;
+    throw err;
+  }
+}
+
+// Append-only: this only ever adds rows. A missing "Reading Log" tab is skipped silently.
+// Progress is logged at most once per fic per day (keyed on link + Melbourne date).
+async function appendReadingEvents(ctx, fic, events, now) {
+  if (!events.length || !ctx.log || ctx.log.available === false) return;
+  const rows = [];
+  const newKeys = [];
+  for (const ev of events) {
+    if (ev.event === 'Progress') {
+      const key = `${fic.link}|${now.date}`;
+      if (ctx.log.progressKeys.has(key) || newKeys.includes(key)) continue;
+      newKeys.push(key);
+    }
+    rows.push([now.stamp, fic.link, fic.title, ev.event, ev.chaptersRead ?? '', ev.readNumber ?? '']);
+  }
+  if (!rows.length) return;
+  try {
+    await sheetsApiAppendLog(ctx.accessToken, rows);
+  } catch (e) {
+    if (e.isLogTabMissing) { ctx.log.available = false; return; }
+    throw e;
+  }
+  newKeys.forEach(k => ctx.log.progressKeys.add(k));
+}
+
+// Everything that has to reach the sheet for one change, in order: the existing status
+// columns, then the reading fields, then the Reading Log row(s).
+async function persistFicChange(ctx, prevFic, patch, transition, now) {
+  const merged = { ...prevFic, ...patch, ...transition.fields };
+  const writeKeys = READING_FIELD_KEYS.filter(k => (k in patch) || (k in transition.fields));
+  if (STATUS_WRITE_KEYS.some(k => k in patch)) {
+    await sheetsApiWriteStatus(ctx.accessToken, merged.rowNumber, merged, ctx.dnrTagsCol, ctx.dnrCategoryCol, ctx.enjoymentCol);
+  }
+  if (writeKeys.length) {
+    await sheetsApiWriteReadingFields(ctx.accessToken, merged.rowNumber, merged, writeKeys, ctx.readingCols);
+  }
+  await appendReadingEvents(ctx, merged, transition.events, now);
+  return merged;
+}
+// </reading-feature>
 
 function useSheetFics(accessToken, onAuthError) {
   const [fics, setFics] = useState([]);
@@ -296,7 +512,26 @@ function useSheetFics(accessToken, onAuthError) {
   const enjoymentColRef = useRef(null);
   const recColRef = useRef(null);
   const recSourceColRef = useRef(null);
+  const readingColsRef = useRef({});
+  const logRef = useRef({ available: true, progressKeys: new Set() });
+  const stepPendingRef = useRef({}); // ficId -> { chaptersRead, lastRead, timer } waiting on the tap debounce
+  const updateFicRef = useRef(null);
+  const [readingMissing, setReadingMissing] = useState([]);
   useEffect(() => { ficsRef.current = fics; }, [fics]);
+
+  // Reads the Reading Log once per load so "one Progress row per fic per day" holds across
+  // devices. A missing tab just turns logging off; any other failure is ignored here (the
+  // append itself is what decides whether the tab exists).
+  const loadReadingLog = async () => {
+    logRef.current = { available: true, progressKeys: new Set() };
+    try {
+      const rows = await sheetsApiGetLog(accessToken);
+      if (rows === null) { logRef.current.available = false; return; }
+      rows.forEach(r => {
+        if (r[3] === 'Progress') logRef.current.progressKeys.add(`${r[1]}|${String(r[0] || '').slice(0, 10)}`);
+      });
+    } catch (e) { /* ignore */ }
+  };
 
   const fetchFics = useCallback(async () => {
     if (!accessToken) return;
@@ -313,6 +548,15 @@ function useSheetFics(accessToken, onAuthError) {
       enjoymentColRef.current = headerIndex['Enjoyment'] !== undefined ? colLetter(headerIndex['Enjoyment']) : null;
       recColRef.current = headerIndex['Recommended'] !== undefined ? colLetter(headerIndex['Recommended']) : null;
       recSourceColRef.current = headerIndex['Rec Source'] !== undefined ? colLetter(headerIndex['Rec Source']) : null;
+      const readingCols = {};
+      const missing = [];
+      READING_FIELD_KEYS.forEach(k => {
+        const name = READING_COL_NAMES[k];
+        readingCols[k] = headerIndex[name] !== undefined ? colLetter(headerIndex[name]) : null;
+        if (readingCols[k] === null) missing.push(name);
+      });
+      readingColsRef.current = readingCols;
+      setReadingMissing(missing);
       const parsedFics = [];
       for (let i = 1; i < rows.length; i++) {
         const fic = ficFromRow(headerIndex, rows[i], i + 1);
@@ -321,6 +565,7 @@ function useSheetFics(accessToken, onAuthError) {
       setFics(parsedFics);
       setLastSynced(new Date());
       setStatus('success');
+      loadReadingLog();
     } catch (e) {
       setErrorMsg(e.message || String(e));
       setStatus('error');
@@ -330,30 +575,77 @@ function useSheetFics(accessToken, onAuthError) {
 
   useEffect(() => { fetchFics(); }, [fetchFics]);
 
-  const updateFic = useCallback(async (ficId, patch) => {
+  const updateFic = useCallback(async (ficId, patchIn) => {
     // Read the current fic from a ref (kept in sync via useEffect) rather than as a
     // side effect inside a setState updater — updater functions must stay pure, since
     // React can invoke them more than once, which was silently corrupting this lookup.
     const prevFic = ficsRef.current.find(f => f.id === ficId);
     if (!prevFic) return;
 
-    setFics(prev => prev.map(f => f.id === ficId ? { ...f, ...patch, syncState: 'syncing', syncError: '', syncType: 'status' } : f));
+    // Chapter taps still waiting on the debounce are saved together with this change.
+    let patch = patchIn;
+    const pend = stepPendingRef.current[ficId];
+    if (pend) {
+      clearTimeout(pend.timer);
+      delete stepPendingRef.current[ficId];
+      patch = { chaptersRead: pend.chaptersRead, lastRead: pend.lastRead, ...patchIn };
+    }
+
+    const now = melbourneNow();
+    const transition = computeReadingTransition(prevFic, patch, now);
+
+    setFics(prev => prev.map(f => f.id === ficId ? { ...f, ...patch, ...transition.fields, syncState: 'syncing', syncError: '', syncType: 'status', retryPatch: undefined } : f));
 
     try {
-      const merged = { ...prevFic, ...patch };
-      await sheetsApiWriteStatus(accessToken, merged.rowNumber, merged, dnrTagsColRef.current, dnrCategoryColRef.current, enjoymentColRef.current);
+      const ctx = {
+        accessToken,
+        dnrTagsCol: dnrTagsColRef.current, dnrCategoryCol: dnrCategoryColRef.current, enjoymentCol: enjoymentColRef.current,
+        readingCols: readingColsRef.current, log: logRef.current,
+      };
+      await persistFicChange(ctx, prevFic, patch, transition, now);
       setFics(prev => prev.map(f => f.id === ficId ? { ...f, syncState: 'idle' } : f));
     } catch (e) {
-      setFics(prev => prev.map(f => f.id === ficId ? { ...prevFic, syncState: 'error', syncError: e.message || String(e), syncType: 'status' } : f));
+      // retryPatch lets "tap to retry" re-apply the change that failed (the card itself rolls back).
+      setFics(prev => prev.map(f => f.id === ficId ? { ...prevFic, syncState: 'error', syncError: e.message || String(e), syncType: 'status', retryPatch: patch } : f));
       if (e.isAuthError && onAuthError) onAuthError();
     }
   }, [accessToken]);
+  useEffect(() => { updateFicRef.current = updateFic; }, [updateFic]);
+
+  // +1 / -1 chapter. The count updates on screen straight away; the sheet write (and the
+  // once-a-day Progress log row) happens after the taps settle, so rapid tapping is one save.
+  const flushStep = (ficId) => {
+    const p = stepPendingRef.current[ficId];
+    if (!p) return;
+    clearTimeout(p.timer);
+    delete stepPendingRef.current[ficId];
+    updateFicRef.current && updateFicRef.current(ficId, { chaptersRead: p.chaptersRead, lastRead: p.lastRead });
+  };
+  const stepChapters = useCallback((ficId, delta) => {
+    const fic = ficsRef.current.find(f => f.id === ficId);
+    if (!fic) return;
+    const pend = stepPendingRef.current[ficId];
+    const current = pend ? pend.chaptersRead : fic.chaptersRead;
+    const next = Math.min(Math.max(fic.chapters, current), Math.max(0, current + delta));
+    if (next === current) return;
+    const stamp = melbourneNow().stamp;
+    if (pend) clearTimeout(pend.timer);
+    stepPendingRef.current[ficId] = { chaptersRead: next, lastRead: stamp, timer: setTimeout(() => flushStep(ficId), 700) };
+    setFics(prev => prev.map(f => f.id === ficId ? { ...f, chaptersRead: next, lastRead: stamp } : f));
+  }, []);
+  useEffect(() => {
+    const onHide = () => { if (document.visibilityState === 'hidden') Object.keys(stepPendingRef.current).forEach(flushStep); };
+    document.addEventListener('visibilitychange', onHide);
+    return () => document.removeEventListener('visibilitychange', onHide);
+  }, []);
 
   const retrySync = useCallback((ficId) => {
     const fic = ficsRef.current.find(f => f.id === ficId);
     if (!fic) return;
     if (fic.syncType === 'recommendation') {
       updateRecommendation(ficId, { recommended: fic.recommended, recSource: fic.recSource });
+    } else if (fic.retryPatch) {
+      updateFic(ficId, fic.retryPatch);
     } else {
       updateFic(ficId, { status: fic.status, dnr: fic.dnr, kg: fic.kg, bk: fic.bk, dnrTags: fic.dnrTags, dnrCategory: fic.dnrCategory, enjoyment: fic.enjoyment });
     }
@@ -375,7 +667,7 @@ function useSheetFics(accessToken, onAuthError) {
     }
   }, [accessToken]);
 
-  return { fics, status, errorMsg, lastSynced, refresh: fetchFics, updateFic, retrySync, updateRecommendation };
+  return { fics, status, errorMsg, lastSynced, refresh: fetchFics, updateFic, retrySync, updateRecommendation, stepChapters, readingMissing };
 }
 
 function computePercentileRanks(values) {
@@ -563,21 +855,29 @@ function Chip({ active, onClick, children, color }) {
   );
 }
 
-function StatusPicker({ ficId, status, dnr, dnrTags, dnrCategory, enjoyment, kg, bk, tags, category, onUpdate }) {
-  const [pendingStatus, setPendingStatus] = useState(null);
+// panelOnly + initialPending let the Currently-reading shelf open the very same Read / DNF
+// flows (rating, kudos, bookmark, Content picker) without the status chips around them.
+function StatusPicker({ ficId, status, dnr, dnrTags, dnrCategory, enjoyment, kg, bk, tags, category, onUpdate, reading, canAddDateRead, initialPending, panelOnly, onDone, onCancel }) {
+  const [pendingStatus, setPendingStatus] = useState(initialPending ?? null);
+  const [addingDate, setAddingDate] = useState(false);
+  const [dateVal, setDateVal] = useState('');
   const [pendingDnrCode, setPendingDnrCode] = useState(null);
   const [pickedDnrTags, setPickedDnrTags] = useState([]);
   const [pickedDnrCategory, setPickedDnrCategory] = useState(false);
-  const [pendingRating, setPendingRating] = useState(0);
+  const [pendingRating, setPendingRating] = useState(initialPending === STATUS_READ ? (enjoyment || 0) : 0);
 
   const setStatus = (s) => {
     setPendingDnrCode(null);
     if (s === STATUS_READ) { setPendingRating(enjoyment || 0); setPendingStatus(STATUS_READ); }
     else if (s === STATUS_DNF || s === STATUS_NOTINT) setPendingStatus(s);
-    else { onUpdate(ficId, { status: s, dnr: 0, dnrTags: [], dnrCategory: false, enjoyment: 0 }); setPendingStatus(null); }
+    else {
+      const keepEnjoyment = s === STATUS_READING || s === STATUS_PAUSED;
+      onUpdate(ficId, { status: s, dnr: 0, dnrTags: [], dnrCategory: false, ...(keepEnjoyment ? {} : { enjoyment: 0 }) });
+      setPendingStatus(null);
+    }
   };
   const toggleRating = (n) => setPendingRating(prev => prev === n ? 0 : n);
-  const confirmRead = (kgVal, bkVal) => { onUpdate(ficId, { status: STATUS_READ, kg: kgVal, bk: bkVal, enjoyment: pendingRating }); setPendingStatus(null); };
+  const confirmRead = (kgVal, bkVal) => { onUpdate(ficId, { status: STATUS_READ, kg: kgVal, bk: bkVal, enjoyment: pendingRating }); setPendingStatus(null); onDone && onDone(); };
   const confirmDnr = (reasonCode) => {
     if (reasonCode === DNR_CONTENT) {
       setPendingDnrCode(reasonCode);
@@ -586,6 +886,7 @@ function StatusPicker({ ficId, status, dnr, dnrTags, dnrCategory, enjoyment, kg,
     } else {
       onUpdate(ficId, { status: pendingStatus, dnr: reasonCode, dnrTags: [], dnrCategory: false });
       setPendingStatus(null);
+      onDone && onDone();
     }
   };
   const toggleDnrTag = (t) => setPickedDnrTags(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
@@ -593,15 +894,18 @@ function StatusPicker({ ficId, status, dnr, dnrTags, dnrCategory, enjoyment, kg,
   const confirmDnrContent = () => {
     onUpdate(ficId, { status: pendingStatus, dnr: DNR_CONTENT, dnrTags: pickedDnrTags, dnrCategory: pickedDnrCategory });
     setPendingStatus(null); setPendingDnrCode(null); setPickedDnrTags([]); setPickedDnrCategory(false);
+    onDone && onDone();
   };
 
   return (
     <div className="mt-3">
-      <div className="flex flex-wrap gap-1.5">
-        {[STATUS_UNREAD, STATUS_TBR, STATUS_READING, STATUS_READ, STATUS_DNF, STATUS_SKIPPED, STATUS_NOTINT].map(s => (
-          <Chip key={s} active={status === s} onClick={() => setStatus(s)} color={STATUS_COLOR[s]}>{STATUS_LABELS[s]}</Chip>
-        ))}
-      </div>
+      {!panelOnly && (
+        <div className="flex flex-wrap gap-1.5">
+          {[STATUS_UNREAD, STATUS_TBR, STATUS_READING, STATUS_PAUSED, STATUS_READ, STATUS_DNF, STATUS_SKIPPED, STATUS_NOTINT].map(s => (
+            <Chip key={s} active={status === s} onClick={() => setStatus(s)} color={STATUS_COLOR[s]}>{STATUS_LABELS[s]}</Chip>
+          ))}
+        </div>
+      )}
       {pendingStatus === STATUS_READ && (
         <div className="mt-2 p-3 rounded-lg" style={{ backgroundColor: COLORS.paper }}>
           <p className="text-xs font-medium mb-2" style={{ color: COLORS.inkSoft }}>Enjoyment (writing and overall, optional)</p>
@@ -668,7 +972,7 @@ function StatusPicker({ ficId, status, dnr, dnrTags, dnrCategory, enjoyment, kg,
           )}
         </div>
       )}
-      {status !== STATUS_UNREAD && pendingStatus === null && (
+      {!panelOnly && status !== STATUS_UNREAD && pendingStatus === null && (
         <p className="text-[11px] mt-1.5" style={{ color: COLORS.inkSoft }}>
           {status === STATUS_READ && `Kudos: ${kg ? 'Yes' : 'No'} · Bookmarked: ${bk ? 'Yes' : 'No'}${enjoyment ? ` · Enjoyment: ${enjoyment}/5` : ''}`}
           {(status === STATUS_DNF || status === STATUS_NOTINT) && dnr > 0 && (() => {
@@ -682,6 +986,27 @@ function StatusPicker({ ficId, status, dnr, dnrTags, dnrCategory, enjoyment, kg,
             return `Reason: ${DNR_LABELS[dnr]}`;
           })()}
         </p>
+      )}
+      {!panelOnly && pendingStatus === null && readingDatesLine(status, reading || {}) && (
+        <p className="text-[11px] mt-0.5" style={{ color: COLORS.inkSoft }}>{readingDatesLine(status, reading || {})}</p>
+      )}
+      {!panelOnly && pendingStatus === null && status === STATUS_READ && !(reading && reading.dateRead) && canAddDateRead && (
+        addingDate ? (
+          <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+            <input type="date" value={dateVal} max={melbourneNow().date} onChange={e => setDateVal(e.target.value)}
+              className="text-sm rounded-md px-2 py-1.5 border" style={{ borderColor: COLORS.line, color: COLORS.ink, backgroundColor: COLORS.paperCard, minHeight: 36 }} />
+            <button disabled={!/^\d{4}-\d{2}-\d{2}$/.test(dateVal)}
+              onClick={() => { onUpdate(ficId, { dateRead: dateVal }); setAddingDate(false); setDateVal(''); }}
+              className="text-sm px-3 py-1.5 rounded-full font-semibold"
+              style={{ backgroundColor: /^\d{4}-\d{2}-\d{2}$/.test(dateVal) ? COLORS.ink : COLORS.line, color: /^\d{4}-\d{2}-\d{2}$/.test(dateVal) ? COLORS.paperCard : COLORS.inkSoft }}>Save</button>
+            <button onClick={() => { setAddingDate(false); setDateVal(''); }} className="text-sm px-2 py-1.5" style={{ color: COLORS.inkSoft }}>Cancel</button>
+          </div>
+        ) : (
+          <button onClick={() => setAddingDate(true)} className="text-[11px] underline mt-1" style={{ color: COLORS.maroon }}>Add date read</button>
+        )
+      )}
+      {panelOnly && pendingStatus !== null && (
+        <button onClick={onCancel} className="text-xs underline mt-2" style={{ color: COLORS.inkSoft }}>Cancel</button>
       )}
     </div>
   );
@@ -712,7 +1037,7 @@ function RecommendToggle({ ficId, recommended, recSource, onUpdate }) {
   );
 }
 
-function FicCard({ fic, scores, ficIndex, onUpdate, onRetry, onUpdateRecommendation, expanded, onToggleExpand }) {
+function FicCard({ fic, scores, ficIndex, onUpdate, onRetry, onUpdateRecommendation, expanded, onToggleExpand, canAddDateRead }) {
   const status = scores.status[ficIndex];
   const pScore = scores.pScore[ficIndex];
   const [tagsExpanded, setTagsExpanded] = useState(false);
@@ -800,14 +1125,107 @@ function FicCard({ fic, scores, ficIndex, onUpdate, onRetry, onUpdateRecommendat
         <a href={fic.link} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm font-medium py-2 px-1 -m-1" style={{ color: COLORS.maroon }}>
           Read on AO3 <ExternalLink size={14} />
         </a>
-        <button onClick={() => onToggleExpand(fic.id)} className="p-2 -m-2" aria-label="Toggle status controls">
-          {expanded ? <ChevronUp size={18} color={COLORS.inkSoft} /> : <ChevronDown size={18} color={COLORS.inkSoft} />}
-        </button>
+        <div className="flex items-center gap-3">
+          {(status === STATUS_UNREAD || status === STATUS_TBR || status === STATUS_SKIPPED) && (
+            <button onClick={() => onUpdate(fic.id, { status: STATUS_READING, dnr: 0, dnrTags: [], dnrCategory: false })}
+              className="text-sm font-semibold px-3.5 rounded-full border" style={{ minHeight: 40, borderColor: COLORS.gold, color: COLORS.gold, backgroundColor: COLORS.paperCard }}>
+              Start reading
+            </button>
+          )}
+          {status === STATUS_READ && (
+            <button onClick={() => onUpdate(fic.id, { status: STATUS_READING })}
+              className="text-sm font-semibold px-3.5 rounded-full border" style={{ minHeight: 40, borderColor: COLORS.readGreen, color: COLORS.readGreen, backgroundColor: COLORS.paperCard }}>
+              Read again
+            </button>
+          )}
+          <button onClick={() => onToggleExpand(fic.id)} className="p-2 -m-2" aria-label="Toggle status controls">
+            {expanded ? <ChevronUp size={18} color={COLORS.inkSoft} /> : <ChevronDown size={18} color={COLORS.inkSoft} />}
+          </button>
+        </div>
       </div>
 
       {expanded && (
-        <StatusPicker ficId={fic.id} status={status} dnr={scores.dnr[ficIndex]} dnrTags={fic.dnrTags} dnrCategory={fic.dnrCategory} enjoyment={fic.enjoyment} kg={scores.kg[ficIndex]} bk={scores.bk[ficIndex]} tags={fic.tags} category={fic.category} onUpdate={onUpdate} />
+        <StatusPicker ficId={fic.id} status={status} dnr={scores.dnr[ficIndex]} dnrTags={fic.dnrTags} dnrCategory={fic.dnrCategory} enjoyment={fic.enjoyment} kg={scores.kg[ficIndex]} bk={scores.bk[ficIndex]} tags={fic.tags} category={fic.category} onUpdate={onUpdate}
+          reading={{ dateStarted: fic.dateStarted, dateRead: fic.dateRead, timesRead: fic.timesRead }} canAddDateRead={canAddDateRead} />
       )}
+    </div>
+  );
+}
+
+function ReadingShelfItem({ fic, onUpdate, onStep, onRetry }) {
+  const [panel, setPanel] = useState(null); // null | 'finish' | 'dnf'
+  const paused = fic.status === STATUS_PAUSED;
+  const total = Math.max(1, fic.chapters);
+  const pct = Math.min(100, Math.round((fic.chaptersRead / total) * 100));
+  const accent = paused ? COLORS.pausedSlate : COLORS.gold;
+  const btn = { minHeight: 44 };
+
+  return (
+    <div className="rounded-md p-3.5 mb-2.5" style={{ backgroundColor: COLORS.paperCard, border: `1px solid ${COLORS.line}`, borderLeft: `4px solid ${accent}` }}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <h3 className="text-base leading-snug" style={{ color: COLORS.ink, fontFamily: "'Lora', serif", fontWeight: 600 }}>
+            {fic.title}
+            {paused && <span className="ml-2 align-middle text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full" style={{ backgroundColor: COLORS.pausedSlate, color: '#FFFFFF' }}>Paused</span>}
+          </h3>
+          {fic.authors.length > 0 && (<p className="text-xs italic" style={{ color: COLORS.inkSoft }}>by {fic.authors.join(', ')}</p>)}
+        </div>
+        <a href={fic.link} target="_blank" rel="noopener noreferrer" className="shrink-0 p-2 -m-2" aria-label="Open on AO3"><ExternalLink size={16} color={COLORS.maroon} /></a>
+      </div>
+
+      <div className="flex items-center gap-3 mt-2.5">
+        <div className="flex-1 rounded-full overflow-hidden" style={{ height: 6, backgroundColor: COLORS.line }} role="progressbar" aria-valuemin={0} aria-valuemax={total} aria-valuenow={fic.chaptersRead}>
+          <div style={{ width: `${pct}%`, height: '100%', backgroundColor: accent }} />
+        </div>
+        <span className="text-xs font-semibold tabular-nums" style={{ color: COLORS.ink }}>{fic.chaptersRead} / {fic.chapters}</span>
+        <div className="flex gap-1.5">
+          <button onClick={() => onStep(fic.id, -1)} aria-label="One chapter back" className="rounded-full border text-lg font-semibold" style={{ ...btn, minWidth: 44, borderColor: COLORS.line, color: COLORS.ink, backgroundColor: COLORS.paperCard }}>−</button>
+          <button onClick={() => onStep(fic.id, 1)} aria-label="One chapter forward" className="rounded-full border text-lg font-semibold" style={{ ...btn, minWidth: 44, borderColor: COLORS.line, color: COLORS.ink, backgroundColor: COLORS.paperCard }}>+</button>
+        </div>
+      </div>
+
+      {panel === null && (
+        <div className="flex gap-2 mt-2.5 flex-wrap">
+          <button onClick={() => setPanel('finish')} className="text-sm px-4 rounded-full font-semibold" style={{ ...btn, backgroundColor: COLORS.ink, color: COLORS.paperCard }}>Finish</button>
+          <button onClick={() => onUpdate(fic.id, { status: paused ? STATUS_READING : STATUS_PAUSED })} className="text-sm px-4 rounded-full border font-medium" style={{ ...btn, borderColor: COLORS.line, color: COLORS.ink, backgroundColor: COLORS.paperCard }}>{paused ? 'Resume' : 'Pause'}</button>
+          <button onClick={() => setPanel('dnf')} className="text-sm px-4 rounded-full border font-medium" style={{ ...btn, borderColor: COLORS.dnfPurple, color: COLORS.dnfPurple, backgroundColor: COLORS.paperCard }}>DNF</button>
+        </div>
+      )}
+      {panel !== null && (
+        <StatusPicker ficId={fic.id} status={fic.status} dnr={fic.dnr} dnrTags={fic.dnrTags} dnrCategory={fic.dnrCategory} enjoyment={fic.enjoyment}
+          kg={fic.kg} bk={fic.bk} tags={fic.tags} category={fic.category} onUpdate={onUpdate}
+          panelOnly initialPending={panel === 'finish' ? STATUS_READ : STATUS_DNF}
+          onDone={() => setPanel(null)} onCancel={() => setPanel(null)} />
+      )}
+
+      {fic.syncState === 'syncing' && (<p className="text-[10px] mt-1.5" style={{ color: COLORS.inkSoft }}>Saving to sheet…</p>)}
+      {fic.syncState === 'error' && (
+        <div className="flex flex-col mt-1.5">
+          <button onClick={() => onRetry(fic.id)} className="text-[10px] font-semibold underline text-left" style={{ color: COLORS.maroon }}>Save failed — tap to retry</button>
+          {fic.syncError && (<span className="text-[10px]" style={{ color: COLORS.maroon }}>{fic.syncError}</span>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CurrentlyReadingShelf({ fics, onUpdate, onStep, onRetry, missingCols }) {
+  const [open, setOpen] = useState(true);
+  const items = useMemo(() => fics
+    .filter(f => f.status === STATUS_READING || f.status === STATUS_PAUSED)
+    .sort((a, b) => (b.lastRead || '').localeCompare(a.lastRead || '') || (b.dateStarted || '').localeCompare(a.dateStarted || '') || a.rowNumber - b.rowNumber),
+  [fics]);
+  if (items.length === 0) return null;
+  return (
+    <div className="mb-4">
+      <div className="flex items-center justify-between mb-1.5">
+        <h2 className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: COLORS.inkSoft }}>Currently reading ({items.length})</h2>
+        <button onClick={() => setOpen(v => !v)} className="text-[11px] underline" style={{ color: COLORS.inkSoft }}>{open ? 'Hide' : 'Show'}</button>
+      </div>
+      {open && missingCols.length > 0 && (
+        <p className="text-[11px] mb-2" style={{ color: COLORS.inkSoft }}>Add {missingCols.map(c => `"${c}"`).join(', ')} to your Data List tab to keep these between sessions.</p>
+      )}
+      {open && items.map(f => (<ReadingShelfItem key={f.id} fic={f} onUpdate={onUpdate} onStep={onStep} onRetry={onRetry} />))}
     </div>
   );
 }
@@ -884,7 +1302,7 @@ function ExportPanel({ fics, onClose }) {
 
 function HollanovRolladexLive() {
   const { accessToken, gisReady, signIn, signOut, authError } = useGoogleAuth();
-  const { fics, status: syncStatus, errorMsg, lastSynced, refresh, updateFic, retrySync, updateRecommendation } = useSheetFics(accessToken, signOut);
+  const { fics, status: syncStatus, errorMsg, lastSynced, refresh, updateFic, retrySync, updateRecommendation, stepChapters, readingMissing } = useSheetFics(accessToken, signOut);
   const scores = useComputedScores(fics);
 
   const [search, setSearch] = useState('');
@@ -1032,7 +1450,7 @@ function HollanovRolladexLive() {
             style={{ backgroundColor: filtersOpen ? COLORS.ink : COLORS.paperCard, color: filtersOpen ? COLORS.paperCard : COLORS.ink, border: `1px solid ${COLORS.line}` }}>
             <SlidersHorizontal size={14} /> Filters {activeFilterCount > 0 ? `(${activeFilterCount})` : ''}
           </button>
-          {[STATUS_UNREAD, STATUS_TBR, STATUS_READING, STATUS_READ, STATUS_DNF, STATUS_SKIPPED, STATUS_NOTINT].map(s => (
+          {[STATUS_UNREAD, STATUS_TBR, STATUS_READING, STATUS_PAUSED, STATUS_READ, STATUS_DNF, STATUS_SKIPPED, STATUS_NOTINT].map(s => (
             <Chip key={s} active={statusFilter.has(s)} onClick={() => toggleSetValue(setStatusFilter, statusFilter, s)} color={STATUS_COLOR[s]}>{STATUS_LABELS[s]}</Chip>
           ))}
           <Chip active={recommendedOnly} onClick={() => setRecommendedOnly(v => !v)} color={COLORS.recGold}>Recommended</Chip>
@@ -1116,10 +1534,11 @@ function HollanovRolladexLive() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 pt-3 pb-6">
+        <CurrentlyReadingShelf fics={fics} onUpdate={updateFic} onStep={stepChapters} onRetry={retrySync} missingCols={readingMissing} />
         {syncStatus === 'loading' && fics.length === 0 && (<div className="text-center mt-16" style={{ color: COLORS.inkSoft }}><p className="text-sm">Loading your fic list…</p></div>)}
         {visible.length === 0 && syncStatus !== 'loading' && (<div className="text-center mt-16" style={{ color: COLORS.inkSoft }}><p className="text-sm">No fics match these filters.</p></div>)}
         {scores && visible.map(idx => (
-          <FicCard key={fics[idx].id} fic={fics[idx]} ficIndex={idx} scores={scores} onUpdate={updateFic} onRetry={retrySync} onUpdateRecommendation={updateRecommendation}
+          <FicCard key={fics[idx].id} fic={fics[idx]} ficIndex={idx} scores={scores} onUpdate={updateFic} onRetry={retrySync} onUpdateRecommendation={updateRecommendation} canAddDateRead={!readingMissing.includes('Date Read')}
             expanded={expandedId === fics[idx].id} onToggleExpand={(id) => setExpandedId(prev => (prev === id ? null : id))} />
         ))}
         {visibleCount < filteredIndices.length && (
