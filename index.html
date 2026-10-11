@@ -2,18 +2,183 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="color-scheme" content="light dark" />
 <title>Hollanov Fics List (Live)</title>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
-<script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" />
 <style>
-  html, body, #root { height: 100%; margin: 0; padding: 0; }
-  body { -webkit-tap-highlight-color: transparent; }
+  /* ---------- Shelf Life v2 tokens ---------- */
+  :root {
+    --bg: #F6F6F9; --surface: #FFFFFF; --surface-sunken: #F6F6F9; --track: #ECECF2; --handle: #D8D8E0;
+    --text: #111111; --text-secondary: #3E3E48; --text-placeholder: #5A5A66;
+    --inverse: #111111; --on-inverse: #FFFFFF;
+    --blue: #2D5BFF; --lime: #D4F55B; --coral: #FF6B4A; --pink: #FFA8D8; --grey-block: #E4E4EC; --on-grey: #111111;
+    --dnf-tint: #FFE3DB; --notint-tint: #EDEDF2;
+    --error-text: #C2311A; --error-bg: #FFE3DB; --warn-text: #6B5300; --warn-bg: #FFF5C2;
+    --scrim: rgba(17,17,17,0.42);
+    --shadow-card: 0 6px 20px rgba(17,17,17,0.06); --shadow-control: 0 2px 8px rgba(17,17,17,0.06);
+    --shadow-float: 0 10px 30px rgba(17,17,17,0.14); --shadow-sheet: 0 -10px 30px rgba(17,17,17,0.12);
+    /* Fandom accent: Hollanov (Game Changers) */
+    --accent: #2D5BFF; --on-accent: #FFFFFF; --accent-text: #2D5BFF;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0F0F14; --surface: #1B1B23; --surface-sunken: #24242E; --track: #2E2E3A; --handle: #4A4A58;
+      --text: #F4F4F8; --text-secondary: #B4B4C2; --text-placeholder: #9A9AAA;
+      --inverse: #F4F4F8; --on-inverse: #111111;
+      --grey-block: #3A3A48; --on-grey: #F4F4F8;
+      --dnf-tint: #3A1F1A; --notint-tint: #24242E;
+      --error-text: #FF8A73; --error-bg: #3A1F1A; --warn-text: #FFE27A; --warn-bg: #3A3210;
+      --scrim: rgba(0,0,0,0.60);
+      --shadow-card: 0 6px 20px rgba(0,0,0,0.45); --shadow-control: 0 2px 8px rgba(0,0,0,0.45);
+      --shadow-float: 0 10px 30px rgba(0,0,0,0.55); --shadow-sheet: 0 -10px 30px rgba(0,0,0,0.5);
+      --accent-text: #8FA8FF;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0F0F14; --surface: #1B1B23; --surface-sunken: #24242E; --track: #2E2E3A; --handle: #4A4A58;
+    --text: #F4F4F8; --text-secondary: #B4B4C2; --text-placeholder: #9A9AAA;
+    --inverse: #F4F4F8; --on-inverse: #111111;
+    --grey-block: #3A3A48; --on-grey: #F4F4F8;
+    --dnf-tint: #3A1F1A; --notint-tint: #24242E;
+    --error-text: #FF8A73; --error-bg: #3A1F1A; --warn-text: #FFE27A; --warn-bg: #3A3210;
+    --scrim: rgba(0,0,0,0.60);
+    --shadow-card: 0 6px 20px rgba(0,0,0,0.45); --shadow-control: 0 2px 8px rgba(0,0,0,0.45);
+    --shadow-float: 0 10px 30px rgba(0,0,0,0.55); --shadow-sheet: 0 -10px 30px rgba(0,0,0,0.5);
+    --accent-text: #8FA8FF;
+    color-scheme: dark;
+  }
+
+  /* ---------- Base ---------- */
+  html, body, #root { min-height: 100%; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Plus Jakarta Sans', system-ui, sans-serif; font-weight: 500;
+         -webkit-tap-highlight-color: transparent; -webkit-font-smoothing: antialiased; }
+  *, *::before, *::after { box-sizing: border-box; }
+  button, input { font-family: inherit; color: inherit; }
+  button { cursor: pointer; border: 0; background: none; padding: 0; }
+  button:disabled { cursor: default; }
+  input::placeholder { color: var(--text-placeholder); }
+  :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  a { color: inherit; }
   @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  @keyframes sheetUp { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* ---------- Layout ---------- */
+  .app { max-width: 560px; margin: 0 auto; padding: 22px 16px 104px; }
+  .stack { display: flex; flex-direction: column; }
+  .row { display: flex; align-items: center; }
+  .wrap { display: flex; flex-wrap: wrap; }
+  .hscroll { display: flex; gap: 8px; overflow-x: auto; margin: 0 -16px; padding: 2px 16px 6px; scrollbar-width: none; }
+  .hscroll::-webkit-scrollbar { display: none; }
+
+  /* ---------- Type ---------- */
+  .t-fandom { font-size: 13px; font-weight: 700; color: var(--text-secondary); }
+  .t-app { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; }
+  .t-section { margin: 0; font-size: 17px; font-weight: 800; line-height: 1.3; }
+  .t-card { margin: 0; font-size: 19px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.25; }
+  .t-card.big { font-size: 21px; }
+  .t-shelf { margin: 0; font-size: 16px; font-weight: 800; line-height: 1.3; }
+  .t-sheet { margin: 0; font-size: 23px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.25; }
+  .t-meta { font-size: 13px; font-weight: 600; color: var(--text-secondary); line-height: 1.4; }
+  .t-body { font-size: 14px; font-weight: 500; line-height: 1.55; color: var(--text-secondary); margin: 0; }
+  .t-caption { font-size: 12px; font-weight: 600; color: var(--text-secondary); line-height: 1.4; }
+  .t-caps { font-size: 12px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-secondary); }
+  .t-label { font-size: 13px; font-weight: 800; }
+  .hl { background: linear-gradient(180deg, transparent 55%, var(--lime) 55%, var(--lime) 92%, transparent 92%); padding: 0 4px;
+        -webkit-box-decoration-break: clone; box-decoration-break: clone; color: var(--text); }
+  :root[data-theme="dark"] .hl { color: #111111; background: linear-gradient(180deg, transparent 10%, var(--lime) 10%, var(--lime) 92%, transparent 92%); }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .hl { color: #111111; background: linear-gradient(180deg, transparent 10%, var(--lime) 10%, var(--lime) 92%, transparent 92%); } }
+
+  /* ---------- Surfaces ---------- */
+  .card { background: var(--surface); border-radius: 26px; padding: 16px; box-shadow: var(--shadow-card); position: relative; }
+  .card.dnf { background: var(--dnf-tint); }
+  .card.notint { background: var(--notint-tint); }
+  .panel { background: var(--surface-sunken); border-radius: 20px; padding: 14px; }
+  .banner { border-radius: 20px; padding: 12px 14px; font-size: 13px; font-weight: 600; line-height: 1.45; }
+  .banner.error { background: var(--error-bg); color: var(--error-text); }
+  .banner.warn { background: var(--warn-bg); color: var(--warn-text); }
+  .banner.info { background: var(--surface-sunken); color: var(--text-secondary); }
+
+  /* ---------- Buttons ---------- */
+  .btn { min-height: 44px; padding: 0 16px; border-radius: 999px; font-size: 14px; font-weight: 700; display: inline-flex;
+         align-items: center; justify-content: center; gap: 6px; text-decoration: none; white-space: nowrap; }
+  .btn-primary { background: var(--inverse); color: var(--on-inverse); }
+  .btn-secondary { background: var(--surface-sunken); color: var(--text); }
+  .btn-danger { background: var(--coral); color: #111111; }
+  .btn-text { background: transparent; color: var(--text-secondary); padding: 0 6px; }
+  .btn:disabled { background: var(--track); color: var(--text-secondary); }
+  .btn-lg { min-height: 52px; font-size: 15px; font-weight: 800; }
+  .btn-xl { min-height: 54px; font-size: 16px; font-weight: 800; width: 100%; }
+  .icon-btn { width: 44px; height: 44px; flex-shrink: 0; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center;
+              background: var(--surface-sunken); color: var(--text); }
+  .icon-btn.raised { background: var(--surface); box-shadow: var(--shadow-control); }
+  .link { background: none; color: var(--accent-text); font-weight: 700; font-size: 13px; min-height: 32px; padding: 0 4px; }
+  .grow { flex: 1 1 0; }
+
+  /* ---------- Chips, pills, tags ---------- */
+  .chip { flex-shrink: 0; min-height: 44px; padding: 0 16px; border-radius: 999px; font-size: 14px; font-weight: 600;
+          display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; background: var(--surface); color: var(--text);
+          box-shadow: var(--shadow-control); }
+  .chip[aria-pressed="true"] { font-weight: 700; box-shadow: none; }
+  .pill { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 800; line-height: 1.3; }
+  .tag { display: inline-flex; align-items: center; border-radius: 999px; padding: 6px 11px; font-size: 13px; font-weight: 600;
+         background: var(--surface-sunken); color: var(--text); line-height: 1.3; }
+  .card .tag { background: var(--surface-sunken); }
+  .card.dnf .tag, .card.notint .tag { background: var(--surface); }
+  .pick { min-height: 40px; margin: 2px 0; padding: 0 12px; border-radius: 999px; font-size: 13px; font-weight: 600;
+          background: var(--surface); color: var(--text); display: inline-flex; align-items: center; gap: 5px; text-align: left; }
+  .pick[aria-pressed="true"] { background: var(--inverse); color: var(--on-inverse); font-weight: 700; }
+  .count-pill { background: var(--accent); color: var(--on-accent); border-radius: 999px; padding: 4px 10px; font-weight: 800; font-size: 13px; }
+  .dot { width: 10px; height: 10px; border-radius: 999px; flex-shrink: 0; }
+
+  /* ---------- Segmented sort ---------- */
+  .seg { display: flex; gap: 4px; background: var(--surface); border-radius: 999px; padding: 4px; box-shadow: var(--shadow-control); }
+  .seg button { flex: 1 1 0; min-height: 40px; border-radius: 999px; font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+  .seg button[aria-pressed="true"] { background: var(--inverse); color: var(--on-inverse); font-weight: 700; }
+
+  /* ---------- Search ---------- */
+  .search { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 4px 0 16px; background: var(--surface);
+            border-radius: 999px; box-shadow: var(--shadow-control); color: var(--text-secondary); }
+  .search.sunken { background: var(--surface-sunken); box-shadow: none; min-height: 44px; }
+  .search input { border: 0; outline: 0; flex: 1; min-width: 0; font-size: 15px; font-weight: 500; background: transparent; color: var(--text); min-height: 44px; }
+
+  /* ---------- Progress ---------- */
+  .track { flex: 1; height: 10px; border-radius: 999px; background: var(--track); overflow: hidden; }
+  .track > div { height: 100%; border-radius: 999px; }
+
+  /* ---------- Sheets ---------- */
+  .scrim { position: fixed; inset: 0; background: var(--scrim); z-index: 40; display: flex; align-items: flex-end; justify-content: center; }
+  .sheet { width: 100%; max-width: 560px; max-height: 88vh; overflow-y: auto; background: var(--surface); border-radius: 30px 30px 0 0;
+           padding: 10px 16px calc(24px + env(safe-area-inset-bottom)); box-shadow: var(--shadow-sheet); animation: sheetUp 180ms ease-out;
+           display: flex; flex-direction: column; gap: 14px; outline: none; }
+  .sheet .handle { width: 40px; height: 5px; border-radius: 999px; background: var(--handle); align-self: center; flex-shrink: 0; }
+  .sheet .pick { background: var(--surface); }
+  .sheet .pick[aria-pressed="true"] { background: var(--inverse); color: var(--on-inverse); }
+  .step { display: inline-flex; width: 24px; height: 24px; border-radius: 999px; background: var(--inverse); color: var(--on-inverse);
+          align-items: center; justify-content: center; font-size: 12px; font-weight: 800; margin-right: 6px; flex-shrink: 0; }
+  .tile { min-height: 56px; border-radius: 18px; background: var(--surface-sunken); font-size: 20px; font-weight: 800; color: var(--text); }
+  .tile[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
+
+  /* ---------- Floating nav ---------- */
+  .nav { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(20px + env(safe-area-inset-bottom)); width: calc(100% - 48px);
+         max-width: 420px; height: 64px; background: var(--surface); border-radius: 999px; box-shadow: var(--shadow-float);
+         display: flex; align-items: center; justify-content: space-around; padding: 0 8px; z-index: 30; }
+  .nav button { height: 48px; min-width: 48px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+                color: var(--text); font-size: 14px; font-weight: 700; padding: 0 12px; }
+  .nav button[aria-current="page"] { background: var(--inverse); color: var(--on-inverse); padding: 0 16px; }
+
+  /* ---------- Popover ---------- */
+  .popover { position: absolute; right: 16px; top: 64px; z-index: 20; background: var(--surface); border-radius: 20px; padding: 8px;
+             box-shadow: var(--shadow-float); display: flex; gap: 8px; }
 </style>
 </head>
 <body>
@@ -55,17 +220,33 @@ const DNR_CODE_MAP = { '': 0, 'Writing/Pacing': 1, 'Content': 2, 'Other': 3, 'Co
 
 const ENJOYMENT_MULTIPLIER = { 0: 1, 1: 0.25, 2: 0.6, 3: 1, 4: 1.5, 5: 2 };
 
+// Styling constants (Shelf Life v2). Values are CSS custom properties defined in the <style> block,
+// so light/dark mode and the fandom accent switch there. Same keys as before.
 const COLORS = {
-  paper: '#EFEAE0', paperCard: '#FFFFFF', ink: '#231F20', inkSoft: '#75706A',
-  maroon: '#7A1F1F', maroonDark: '#5C1616', gold: '#9C7A3C', line: '#DCD4C4',
-  readGreen: '#3F6B4A', dnfPurple: '#6C5A8E', skipOrange: '#B5702B', notIntGray: '#948B84',
-  tbrBlue: '#3D5A73', recGold: '#C9A227', pausedSlate: '#6F7F8C',
+  paper: 'var(--bg)', paperCard: 'var(--surface)', ink: 'var(--text)', inkSoft: 'var(--text-secondary)',
+  maroon: 'var(--accent-text)', maroonDark: 'var(--accent-text)', gold: 'var(--accent)', line: 'var(--track)',
+  readGreen: 'var(--lime)', dnfPurple: 'var(--coral)', skipOrange: 'var(--grey-block)', notIntGray: 'var(--text-secondary)',
+  tbrBlue: 'var(--pink)', recGold: 'var(--inverse)', pausedSlate: 'var(--text-secondary)',
 };
 const STATUS_COLOR = {
-  [STATUS_UNREAD]: COLORS.inkSoft, [STATUS_READ]: COLORS.readGreen, [STATUS_DNF]: COLORS.dnfPurple,
-  [STATUS_SKIPPED]: COLORS.skipOrange, [STATUS_NOTINT]: COLORS.notIntGray, [STATUS_READING]: COLORS.gold,
-  [STATUS_TBR]: COLORS.tbrBlue, [STATUS_PAUSED]: COLORS.pausedSlate,
+  [STATUS_UNREAD]: 'var(--accent)', [STATUS_READ]: 'var(--lime)', [STATUS_DNF]: 'var(--coral)',
+  [STATUS_SKIPPED]: 'var(--grey-block)', [STATUS_NOTINT]: 'var(--inverse)', [STATUS_READING]: 'var(--blue)',
+  [STATUS_TBR]: 'var(--pink)', [STATUS_PAUSED]: 'var(--grey-block)',
 };
+// Text colour to use on each status fill (contrast-checked).
+const STATUS_ON = {
+  [STATUS_UNREAD]: 'var(--on-accent)', [STATUS_READ]: '#111111', [STATUS_DNF]: '#111111',
+  [STATUS_SKIPPED]: 'var(--on-grey)', [STATUS_NOTINT]: 'var(--on-inverse)', [STATUS_READING]: '#FFFFFF',
+  [STATUS_TBR]: '#111111', [STATUS_PAUSED]: 'var(--on-grey)',
+};
+// Dot colours in the status picker (decorative; the label always carries the meaning).
+const STATUS_DOT = {
+  [STATUS_UNREAD]: 'var(--accent)', [STATUS_READ]: 'var(--lime)', [STATUS_DNF]: 'var(--coral)',
+  [STATUS_SKIPPED]: '#C9C9D3', [STATUS_NOTINT]: 'var(--inverse)', [STATUS_READING]: 'var(--blue)',
+  [STATUS_TBR]: 'var(--pink)', [STATUS_PAUSED]: '#9A9AA8',
+};
+const APP_NAME = 'Hollanov';
+const FANDOM_LINE = 'Game Changers · Ilya / Shane';
 
 const WORD_BUCKETS = [
   ['Under 15k', 0, 15000], ['15k–30k', 15000, 30000], ['30k–60k', 30000, 60000],
@@ -849,18 +1030,62 @@ function useComputedScores(fics) {
   }, [fics]);
 }
 
-function Chip({ active, onClick, children, color }) {
+// ---------- Shelf Life v2 presentation layer (styling only; behaviour unchanged) ----------
+function Check(props) { return <svg xmlns="http://www.w3.org/2000/svg" width={props.size||14} height={props.size||14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>; }
+function Heart(props) { return <svg xmlns="http://www.w3.org/2000/svg" width={props.size||14} height={props.size||14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z"/></svg>; }
+function BookmarkIcon(props) { return <svg xmlns="http://www.w3.org/2000/svg" width={props.size||14} height={props.size||14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>; }
+function Eye(props) { return <svg xmlns="http://www.w3.org/2000/svg" width={props.size||14} height={props.size||14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>; }
+function ListIcon(props) { return <svg xmlns="http://www.w3.org/2000/svg" width={props.size||20} height={props.size||20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>; }
+function BookIcon(props) { return <svg xmlns="http://www.w3.org/2000/svg" width={props.size||20} height={props.size||20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M2 4h6a4 4 0 0 1 4 4v12a3 3 0 0 0-3-3H2z"/><path d="M22 4h-6a4 4 0 0 0-4 4v12a3 3 0 0 1 3-3h7z"/></svg>; }
+function UserIcon(props) { return <svg xmlns="http://www.w3.org/2000/svg" width={props.size||20} height={props.size||20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>; }
+function PauseIcon(props) { return <svg xmlns="http://www.w3.org/2000/svg" width={props.size||12} height={props.size||12} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>; }
+
+// Bottom sheet shell. Rendered into <body> so it floats above the list.
+function Sheet({ label, onClose, children }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const prev = document.activeElement;
+    if (ref.current) ref.current.focus();
+    return () => { if (prev && prev.focus) prev.focus(); };
+  }, []);
+  return ReactDOM.createPortal(
+    <div className="scrim" onClick={onClose}>
+      <section role="dialog" aria-modal="true" aria-label={label} className="sheet" tabIndex={-1} ref={ref}
+        onClick={e => e.stopPropagation()} onKeyDown={e => { if (e.key === 'Escape' && onClose) onClose(); }}>
+        <div className="handle" aria-hidden="true"></div>
+        {children}
+      </section>
+    </div>,
+    document.body
+  );
+}
+
+function StatusPill({ status, dnr }) {
+  if (status === STATUS_UNREAD) return null;
+  const reason = (status === STATUS_DNF || status === STATUS_NOTINT) && dnr ? DNR_LABELS[dnr] : '';
+  let pill;
+  if (status === STATUS_DNF) pill = <span className="pill" style={{ background: 'var(--inverse)', color: 'var(--on-inverse)' }}>DNF</span>;
+  else if (status === STATUS_NOTINT) pill = <span className="pill" style={{ background: 'var(--text-secondary)', color: 'var(--surface)' }}>Not interested</span>;
+  else if (status === STATUS_READ) pill = <span className="pill" style={{ background: 'var(--lime)', color: '#111111' }}><Check size={11} />Read</span>;
+  else if (status === STATUS_READING) pill = <span className="pill" style={{ background: 'var(--blue)', color: '#FFFFFF' }}>Reading</span>;
+  else if (status === STATUS_PAUSED) pill = <span className="pill" style={{ background: 'var(--grey-block)', color: 'var(--on-grey)' }}><PauseIcon size={10} />Paused</span>;
+  else if (status === STATUS_TBR) pill = <span className="pill" style={{ background: 'var(--pink)', color: '#111111' }}>TBR</span>;
+  else pill = <span className="pill" style={{ background: 'var(--grey-block)', color: 'var(--on-grey)' }}>{STATUS_LABELS[status]}</span>;
+  return (<>{pill}{reason && <span className="t-meta" style={{ fontWeight: 700 }}>{reason}</span>}</>);
+}
+
+function Chip({ active, onClick, children, color, textColor }) {
   return (
-    <button onClick={onClick} className="whitespace-nowrap rounded-full px-3 py-2 text-sm font-medium border shrink-0"
-      style={{ backgroundColor: active ? (color || COLORS.ink) : COLORS.paperCard, color: active ? COLORS.paperCard : COLORS.ink, borderColor: active ? (color || COLORS.ink) : COLORS.line }}>
-      {children}
+    <button onClick={onClick} aria-pressed={!!active} className="chip"
+      style={active ? { background: color || 'var(--inverse)', color: textColor || 'var(--on-inverse)' } : undefined}>
+      {active && <Check size={14} />}{children}
     </button>
   );
 }
 
 // panelOnly + initialPending let the Currently-reading shelf open the very same Read / DNF
 // flows (rating, kudos, bookmark, Content picker) without the status chips around them.
-function StatusPicker({ ficId, status, dnr, dnrTags, dnrCategory, enjoyment, kg, bk, tags, category, onUpdate, reading, canAddDateRead, initialPending, panelOnly, onDone, onCancel }) {
+function StatusPicker({ ficId, status, dnr, dnrTags, dnrCategory, enjoyment, kg, bk, tags, category, onUpdate, reading, canAddDateRead, initialPending, panelOnly, onDone, onCancel, title, authors }) {
   const [pendingStatus, setPendingStatus] = useState(initialPending ?? null);
   const [addingDate, setAddingDate] = useState(false);
   const [dateVal, setDateVal] = useState('');
@@ -900,116 +1125,153 @@ function StatusPicker({ ficId, status, dnr, dnrTags, dnrCategory, enjoyment, kg,
     onDone && onDone();
   };
 
+  // UI glue: closes the sheet without saving (same as the old inline panel's Cancel).
+  const closeSheet = () => { if (panelOnly) { onCancel && onCancel(); } else { setPendingStatus(null); setPendingDnrCode(null); } };
+  const byLine = authors && authors.length ? authors.join(', ') : '';
+  const reasonStyle = (code) => (pendingDnrCode === code
+    ? { background: 'var(--coral)', color: '#111111', fontWeight: 800 }
+    : { background: 'var(--surface-sunken)', color: 'var(--text)' });
+  const kbStyle = { Neither: { background: 'var(--surface-sunken)', color: 'var(--text)' }, Kudos: { background: 'var(--pink)', color: '#111111' },
+    Bookmarked: { background: 'var(--lime)', color: '#111111' }, Both: { background: 'var(--inverse)', color: 'var(--on-inverse)' } };
+
   return (
-    <div className="mt-3">
+    <div>
       {!panelOnly && (
-        <div className="flex flex-wrap gap-1.5">
-          {[STATUS_UNREAD, STATUS_TBR, STATUS_READING, STATUS_PAUSED, STATUS_READ, STATUS_DNF, STATUS_SKIPPED, STATUS_NOTINT].map(s => (
-            <Chip key={s} active={status === s} onClick={() => setStatus(s)} color={STATUS_COLOR[s]}>{STATUS_LABELS[s]}</Chip>
-          ))}
-        </div>
-      )}
-      {pendingStatus === STATUS_READ && (
-        <div className="mt-2 p-3 rounded-lg" style={{ backgroundColor: COLORS.paper }}>
-          <p className="text-xs font-medium mb-2" style={{ color: COLORS.inkSoft }}>Enjoyment (writing and overall, optional)</p>
-          <div className="flex gap-2">
-            {[1, 2, 3, 4, 5].map(n => (
-              <button key={n} onClick={() => toggleRating(n)} aria-label={`Enjoyment ${n} of 5`}
-                className="flex-1 text-base font-semibold rounded-full"
-                style={{ minHeight: 44, border: `1px solid ${pendingRating === n ? COLORS.ink : COLORS.line}`, backgroundColor: pendingRating === n ? COLORS.ink : COLORS.paperCard, color: pendingRating === n ? COLORS.paperCard : COLORS.ink }}>
-                {n}
-              </button>
-            ))}
+        <div className="panel stack" style={{ gap: 10, marginTop: 4 }}>
+          <div className="t-label">Status</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+            {[STATUS_UNREAD, STATUS_TBR, STATUS_READING, STATUS_PAUSED, STATUS_READ, STATUS_DNF, STATUS_SKIPPED, STATUS_NOTINT].map(s => {
+              const on = status === s;
+              return (
+                <button key={s} onClick={() => setStatus(s)} aria-pressed={on} className="btn"
+                  style={on ? { background: 'var(--inverse)', color: 'var(--on-inverse)' } : { background: 'var(--surface)', color: 'var(--text)' }}>
+                  {on ? <Check size={14} /> : <span className="dot" style={{ background: STATUS_DOT[s] }} aria-hidden="true"></span>}
+                  {STATUS_LABELS[s]}
+                </button>
+              );
+            })}
           </div>
-          <div className="grid grid-cols-3 mt-1.5 text-[11px]" style={{ color: COLORS.inkSoft }}>
-            <span className="text-left">1 · didn't enjoy it</span>
-            <span className="text-center">3 · neutral</span>
-            <span className="text-right">5 · loved it</span>
-          </div>
-          <p className="text-xs font-medium mb-2 mt-3.5" style={{ color: COLORS.inkSoft }}>Left kudos? Bookmarked?</p>
-          <div className="flex gap-2 flex-wrap">
-            {[[false, false, 'Neither'], [true, false, 'Kudos'], [false, true, 'Bookmarked'], [true, true, 'Both']].map(([kv, bv, label]) => (
-              <button key={label} onClick={() => confirmRead(kv, bv)} className="text-sm px-3 py-2 rounded-full border font-medium" style={{ borderColor: COLORS.line, backgroundColor: COLORS.paperCard, color: COLORS.ink }}>{label}</button>
-            ))}
-          </div>
-        </div>
-      )}
-      {(pendingStatus === STATUS_DNF || pendingStatus === STATUS_NOTINT) && pendingDnrCode === null && (
-        <div className="mt-2 p-3 rounded-lg" style={{ backgroundColor: COLORS.paper }}>
-          <p className="text-xs font-medium mb-2" style={{ color: COLORS.inkSoft }}>Why?</p>
-          <div className="flex gap-2 flex-wrap">
-            {[DNR_WRITING, DNR_CONTENT, DNR_OTHER].map(code => (
-              <button key={code} onClick={() => confirmDnr(code)} className="text-sm px-3 py-2 rounded-full border font-medium" style={{ borderColor: COLORS.line, backgroundColor: COLORS.paperCard, color: COLORS.ink }}>{DNR_LABELS[code]}</button>
-            ))}
-          </div>
-        </div>
-      )}
-      {pendingDnrCode === DNR_CONTENT && (
-        <div className="mt-2 p-3 rounded-lg" style={{ backgroundColor: COLORS.paper }}>
-          <p className="text-xs font-medium mb-2" style={{ color: COLORS.inkSoft }}>What was the issue? (pick any mix of tags or category)</p>
-
-          {tags.length > 0 && (
-            <div className="mb-2">
-              <p className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: COLORS.inkSoft }}>Tags</p>
-              <div className="flex flex-wrap gap-1.5">
-                {tags.map(t => (<Chip key={t} active={pickedDnrTags.includes(t)} onClick={() => toggleDnrTag(t)} color={COLORS.maroon}>{t}</Chip>))}
+          {status !== STATUS_UNREAD && pendingStatus === null && (
+            <p className="t-caption" style={{ margin: 0 }}>
+              {status === STATUS_READ && `Kudos: ${kg ? 'Yes' : 'No'} · Bookmarked: ${bk ? 'Yes' : 'No'}${enjoyment ? ` · Enjoyment: ${enjoyment}/5` : ''}`}
+              {(status === STATUS_DNF || status === STATUS_NOTINT) && dnr > 0 && (() => {
+                if (dnr === DNR_CONTENT) {
+                  const parts = [];
+                  if (dnrTags && dnrTags.length) parts.push(`Tags: ${dnrTags.join(', ')}`);
+                  if (dnrCategory) parts.push('Category');
+                  return `Reason: Content${parts.length ? ` (${parts.join('; ')})` : ''}`;
+                }
+                if (dnr === DNR_LEGACY_CONTENT_TAGS) return `Reason: ${DNR_LABELS[dnr]}${dnrTags && dnrTags.length ? ` (${dnrTags.join(', ')})` : ''}`;
+                return `Reason: ${DNR_LABELS[dnr]}`;
+              })()}
+            </p>
+          )}
+          {pendingStatus === null && readingDatesLine(status, reading || {}) && (
+            <p className="t-caption" style={{ margin: 0 }}>{readingDatesLine(status, reading || {})}</p>
+          )}
+          {pendingStatus === null && status === STATUS_READ && !(reading && reading.dateRead) && canAddDateRead && (
+            addingDate ? (
+              <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                <input type="date" value={dateVal} max={melbourneNow().date} onChange={e => setDateVal(e.target.value)} aria-label="Date read"
+                  style={{ minHeight: 44, border: 0, borderRadius: 999, padding: '0 14px', background: 'var(--surface)', color: 'var(--text)', fontSize: 14, fontWeight: 600 }} />
+                <button disabled={!/^\d{4}-\d{2}-\d{2}$/.test(dateVal)}
+                  onClick={() => { onUpdate(ficId, { dateRead: dateVal }); setAddingDate(false); setDateVal(''); }}
+                  className="btn btn-primary">Save</button>
+                <button onClick={() => { setAddingDate(false); setDateVal(''); }} className="btn btn-text">Cancel</button>
               </div>
-            </div>
-          )}
-
-          <div className="mb-2">
-            <p className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: COLORS.inkSoft }}>Category</p>
-            <Chip active={pickedDnrCategory} onClick={() => setPickedDnrCategory(v => !v)} color={COLORS.maroon}>{category}</Chip>
-          </div>
-
-          <button
-            onClick={confirmDnrContent}
-            disabled={!anyPicked}
-            className="mt-1 text-sm px-4 py-2 rounded-full font-semibold"
-            style={{ backgroundColor: anyPicked ? COLORS.ink : COLORS.line, color: anyPicked ? COLORS.paperCard : COLORS.inkSoft }}
-          >
-            Confirm
-          </button>
-          {!anyPicked && (
-            <p className="text-[11px] mt-1.5" style={{ color: COLORS.inkSoft }}>Select at least one item — otherwise pick a different reason above.</p>
+            ) : (
+              <div><button onClick={() => setAddingDate(true)} className="link">Add date read</button></div>
+            )
           )}
         </div>
       )}
-      {!panelOnly && status !== STATUS_UNREAD && pendingStatus === null && (
-        <p className="text-[11px] mt-1.5" style={{ color: COLORS.inkSoft }}>
-          {status === STATUS_READ && `Kudos: ${kg ? 'Yes' : 'No'} · Bookmarked: ${bk ? 'Yes' : 'No'}${enjoyment ? ` · Enjoyment: ${enjoyment}/5` : ''}`}
-          {(status === STATUS_DNF || status === STATUS_NOTINT) && dnr > 0 && (() => {
-            if (dnr === DNR_CONTENT) {
-              const parts = [];
-              if (dnrTags && dnrTags.length) parts.push(`Tags: ${dnrTags.join(', ')}`);
-              if (dnrCategory) parts.push('Category');
-              return `Reason: Content${parts.length ? ` (${parts.join('; ')})` : ''}`;
-            }
-            if (dnr === DNR_LEGACY_CONTENT_TAGS) return `Reason: ${DNR_LABELS[dnr]}${dnrTags && dnrTags.length ? ` (${dnrTags.join(', ')})` : ''}`;
-            return `Reason: ${DNR_LABELS[dnr]}`;
-          })()}
-        </p>
-      )}
-      {!panelOnly && pendingStatus === null && readingDatesLine(status, reading || {}) && (
-        <p className="text-[11px] mt-0.5" style={{ color: COLORS.inkSoft }}>{readingDatesLine(status, reading || {})}</p>
-      )}
-      {!panelOnly && pendingStatus === null && status === STATUS_READ && !(reading && reading.dateRead) && canAddDateRead && (
-        addingDate ? (
-          <div className="mt-1.5 flex items-center gap-2 flex-wrap">
-            <input type="date" value={dateVal} max={melbourneNow().date} onChange={e => setDateVal(e.target.value)}
-              className="text-sm rounded-md px-2 py-1.5 border" style={{ borderColor: COLORS.line, color: COLORS.ink, backgroundColor: COLORS.paperCard, minHeight: 36 }} />
-            <button disabled={!/^\d{4}-\d{2}-\d{2}$/.test(dateVal)}
-              onClick={() => { onUpdate(ficId, { dateRead: dateVal }); setAddingDate(false); setDateVal(''); }}
-              className="text-sm px-3 py-1.5 rounded-full font-semibold"
-              style={{ backgroundColor: /^\d{4}-\d{2}-\d{2}$/.test(dateVal) ? COLORS.ink : COLORS.line, color: /^\d{4}-\d{2}-\d{2}$/.test(dateVal) ? COLORS.paperCard : COLORS.inkSoft }}>Save</button>
-            <button onClick={() => { setAddingDate(false); setDateVal(''); }} className="text-sm px-2 py-1.5" style={{ color: COLORS.inkSoft }}>Cancel</button>
+
+      {pendingStatus !== null && (
+        <Sheet label={pendingStatus === STATUS_READ ? 'Mark as read' : 'Why are you marking this?'} onClose={closeSheet}>
+          <div>
+            <div className="t-meta" style={{ fontWeight: 700 }}>
+              {pendingStatus === STATUS_READ ? 'Finished' : pendingStatus === STATUS_DNF ? 'Marking DNF' : 'Marking Not interested'}{byLine ? ` · ${byLine}` : ''}
+            </div>
+            <h2 className="t-sheet" style={{ marginTop: 2 }}>{pendingStatus === STATUS_READ ? <span className="hl">{title}</span> : title}</h2>
           </div>
-        ) : (
-          <button onClick={() => setAddingDate(true)} className="text-[11px] underline mt-1" style={{ color: COLORS.maroon }}>Add date read</button>
-        )
-      )}
-      {panelOnly && pendingStatus !== null && (
-        <button onClick={onCancel} className="text-xs underline mt-2" style={{ color: COLORS.inkSoft }}>Cancel</button>
+
+          {pendingStatus === STATUS_READ && (
+            <>
+              <div className="stack" style={{ gap: 8 }}>
+                <div className="row" style={{ fontSize: 15, fontWeight: 800 }}><span className="step">1</span>How much did you enjoy it?&nbsp;<span className="t-meta">Optional</span></div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 6 }}>
+                  {[1, 2, 3, 4, 5].map(n => (
+                    <button key={n} onClick={() => toggleRating(n)} aria-label={`Enjoyment ${n} of 5`} aria-pressed={pendingRating === n} className="tile num">{n}</button>
+                  ))}
+                </div>
+                <div className="row t-caption" style={{ justifyContent: 'space-between' }}>
+                  <span>1 · didn't enjoy it</span><span>3 · neutral</span><span>5 · loved it</span>
+                </div>
+              </div>
+              <div className="stack" style={{ gap: 8 }}>
+                <div className="row" style={{ fontSize: 15, fontWeight: 800 }}><span className="step">2</span>Left kudos? Bookmarked?&nbsp;<span className="t-meta">Tap to save</span></div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+                  {[[false, false, 'Neither'], [true, false, 'Kudos'], [false, true, 'Bookmarked'], [true, true, 'Both']].map(([kv, bv, label]) => (
+                    <button key={label} onClick={() => confirmRead(kv, bv)} className="btn btn-lg" style={kbStyle[label]}>{label}</button>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
+          {(pendingStatus === STATUS_DNF || pendingStatus === STATUS_NOTINT) && (
+            <>
+              <div className="stack" style={{ gap: 8 }}>
+                <div style={{ fontSize: 15, fontWeight: 800 }}>Why?</div>
+                <div className="row" style={{ gap: 8 }}>
+                  {[DNR_WRITING, DNR_CONTENT, DNR_OTHER].map(code => (
+                    <button key={code} onClick={() => confirmDnr(code)} aria-pressed={pendingDnrCode === code} className="btn grow"
+                      style={{ minHeight: 48, padding: '0 8px', ...reasonStyle(code) }}>
+                      {pendingDnrCode === code && <Check size={14} />}{DNR_LABELS[code]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {pendingDnrCode === DNR_CONTENT && (
+                <div className="panel stack" style={{ gap: 10 }}>
+                  <div style={{ fontSize: 14, fontWeight: 800 }}>What was the issue? <span className="t-meta">Pick any mix of tags or category</span></div>
+                  {tags.length > 0 && (
+                    <div className="stack" style={{ gap: 6 }}>
+                      <div className="t-caps">Tags</div>
+                      <div className="wrap" style={{ gap: 6 }}>
+                        {tags.map(t => (
+                          <button key={t} onClick={() => toggleDnrTag(t)} aria-pressed={pickedDnrTags.includes(t)} className="pick">
+                            {pickedDnrTags.includes(t) && <Check size={12} />}{t}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div className="stack" style={{ gap: 6 }}>
+                    <div className="t-caps">Category</div>
+                    <div><button onClick={() => setPickedDnrCategory(v => !v)} aria-pressed={pickedDnrCategory} className="pick">
+                      {pickedDnrCategory && <Check size={12} />}{category}
+                    </button></div>
+                  </div>
+                </div>
+              )}
+              {pendingDnrCode === DNR_CONTENT && (
+                <div className="stack" style={{ gap: 6 }}>
+                  <button onClick={confirmDnrContent} disabled={!anyPicked} className="btn btn-primary btn-xl">
+                    Confirm {pendingStatus === STATUS_DNF ? 'DNF' : 'Not interested'}
+                  </button>
+                  {!anyPicked && (
+                    <p className="t-caption" style={{ margin: 0, textAlign: 'center' }}>Select at least one item — otherwise pick a different reason above.</p>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+
+          {panelOnly && pendingStatus !== null
+            ? <button onClick={onCancel} className="btn btn-text">Cancel</button>
+            : <button onClick={closeSheet} className="btn btn-text">Cancel</button>}
+        </Sheet>
       )}
     </div>
   );
@@ -1027,17 +1289,31 @@ function RecommendToggle({ ficId, recommended, recSource, onUpdate }) {
   };
   return (
     <div>
-      <button onClick={toggle} className="p-1.5 -m-1.5 rounded-full active:scale-95" aria-label={recommended ? 'Remove recommendation mark' : 'Mark as recommended'}>
-        <Megaphone size={18} color={recommended ? COLORS.recGold : COLORS.inkSoft} />
+      <button onClick={toggle} className="icon-btn" aria-label={recommended ? 'Remove recommendation mark' : 'Mark as recommended'}
+        style={recommended ? { background: 'var(--accent)', color: 'var(--on-accent)' } : { color: 'var(--text-secondary)' }}>
+        <Megaphone size={18} color="currentColor" fill={recommended ? 'currentColor' : 'none'} />
       </button>
       {picking && (
-        <div className="absolute right-4 mt-1 p-2 rounded-lg flex gap-2 z-20" style={{ backgroundColor: COLORS.paperCard, border: `1px solid ${COLORS.line}` }}>
-          <button onClick={() => pick('Social Media')} className="text-xs px-2.5 py-1.5 rounded-full border font-medium" style={{ borderColor: COLORS.line, color: COLORS.ink }}>Social Media</button>
-          <button onClick={() => pick('AO3')} className="text-xs px-2.5 py-1.5 rounded-full border font-medium" style={{ borderColor: COLORS.line, color: COLORS.ink }}>AO3</button>
+        <div className="popover" role="group" aria-label="Where was it recommended?">
+          <button onClick={() => pick('Social Media')} className="btn btn-secondary">Social Media</button>
+          <button onClick={() => pick('AO3')} className="btn btn-secondary">AO3</button>
         </div>
       )}
     </div>
   );
+}
+
+function SyncNote({ fic, onRetry }) {
+  if (fic.syncState === 'syncing') return <span className="t-caption">Saving to sheet…</span>;
+  if (fic.syncState === 'error') return (
+    <div className="stack">
+      <button onClick={() => onRetry(fic.id)} className="link" style={{ color: 'var(--error-text)', padding: 0, textAlign: 'left', textDecoration: 'underline' }}>
+        Save failed — tap to retry
+      </button>
+      {fic.syncError && (<span className="t-caption" style={{ color: 'var(--error-text)' }}>{fic.syncError}</span>)}
+    </div>
+  );
+  return null;
 }
 
 function FicCard({ fic, scores, ficIndex, onUpdate, onRetry, onUpdateRecommendation, expanded, onToggleExpand, canAddDateRead }) {
@@ -1050,63 +1326,53 @@ function FicCard({ fic, scores, ficIndex, onUpdate, onRetry, onUpdateRecommendat
   const summaryIsLong = fic.summary && fic.summary.length > SUMMARY_PREVIEW_LEN;
   const summaryText = summaryExpanded || !summaryIsLong ? fic.summary : fic.summary.slice(0, SUMMARY_PREVIEW_LEN) + '…';
 
+  const isDnf = status === STATUS_DNF;
+  const showTopRow = status !== STATUS_UNREAD || fic.recommended || fic.syncState === 'syncing' || fic.syncState === 'error';
+
   return (
-    <div className="relative rounded-md p-4 mb-3" style={{ backgroundColor: status === STATUS_READ ? '#F1F8F4' : COLORS.paperCard, border: `1px solid ${COLORS.line}`, borderLeft: `4px solid ${STATUS_COLOR[status]}` }}>
-      <div className="flex items-center gap-2 mb-1.5">
-        {status !== STATUS_UNREAD && (
-          <span className="inline-block text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full" style={{ backgroundColor: STATUS_COLOR[status], color: '#FFFFFF' }}>{STATUS_LABELS[status]}</span>
-        )}
-        {fic.recommended && (
-          <span className="inline-block text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full" style={{ backgroundColor: COLORS.recGold, color: '#FFFFFF' }}>
-            Recommended{fic.recSource ? ` · ${fic.recSource}` : ''}
-          </span>
-        )}
-        {fic.syncState === 'syncing' && (
-          <span className="text-[10px]" style={{ color: COLORS.inkSoft }}>Saving to sheet…</span>
-        )}
-        {fic.syncState === 'error' && (
-          <div className="flex flex-col">
-            <button onClick={() => onRetry(fic.id)} className="text-[10px] font-semibold underline text-left" style={{ color: COLORS.maroon }}>
-              Save failed — tap to retry
-            </button>
-            {fic.syncError && (
-              <span className="text-[10px]" style={{ color: COLORS.maroon }}>{fic.syncError}</span>
-            )}
-          </div>
-        )}
-      </div>
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <h3 className="text-lg leading-snug" style={{ color: COLORS.ink, fontFamily: "'Lora', serif", fontWeight: 600 }}>{fic.title}</h3>
-          {fic.authors.length > 0 && (
-            <p className="text-xs italic" style={{ color: COLORS.inkSoft }}>by {fic.authors.join(', ')}</p>
+    <article className={`card stack${isDnf ? ' dnf' : ''}${status === STATUS_NOTINT ? ' notint' : ''}`} style={{ gap: 10 }}>
+      {showTopRow && (
+        <div className="wrap" style={{ gap: 6, alignItems: 'center' }}>
+          <StatusPill status={status} dnr={scores.dnr[ficIndex]} />
+          {fic.recommended && (
+            <span className="pill" style={{ background: 'var(--inverse)', color: 'var(--on-inverse)' }}>
+              <Megaphone size={11} color="currentColor" fill="currentColor" />Recommended{fic.recSource ? ` · ${fic.recSource}` : ''}
+            </span>
           )}
-          <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>
-            {fic.rating} · {fic.category} · {fic.words.toLocaleString()}w{fic.chapters > 1 ? ` · ${fic.chapters} ch` : ''} · {fic.date}
-          </p>
+          <SyncNote fic={fic} onRetry={onRetry} />
         </div>
-        <div className="shrink-0 flex items-start gap-2">
+      )}
+
+      <div className="row" style={{ alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+        <div style={{ minWidth: 0 }}>
+          <h3 className={`t-card${expanded ? ' big' : ''}`} style={isDnf ? { textDecoration: 'line-through', textDecorationThickness: 2 } : undefined}>{fic.title}</h3>
+          {fic.authors.length > 0 && (<div className="t-meta" style={{ marginTop: 2 }}>by {fic.authors.join(', ')}</div>)}
+          <div className="t-meta num" style={{ marginTop: 4 }}>
+            {fic.rating} · {fic.category} · {fic.words.toLocaleString()} words{fic.chapters > 1 ? ` · ${fic.chapters} ch` : ''} · <span style={{ whiteSpace: 'nowrap' }}>{fic.date}</span>
+          </div>
+        </div>
+        <div className="row" style={{ alignItems: 'flex-start', gap: 6, flexShrink: 0 }}>
           <RecommendToggle ficId={fic.id} recommended={fic.recommended} recSource={fic.recSource} onUpdate={onUpdateRecommendation} />
-          <div className="text-right">
-            <div className="text-lg font-bold" style={{ color: COLORS.maroon, fontFamily: "'Lora', serif" }}>{pScore.toFixed(0)}</div>
-            <div className="text-[9px] uppercase tracking-wide" style={{ color: COLORS.inkSoft }}>score</div>
+          <div style={{ textAlign: 'right', minWidth: 44 }}>
+            <div className="num" style={{ fontSize: expanded ? 28 : 26, fontWeight: 800, lineHeight: 1, color: 'var(--accent-text)' }}>{pScore.toFixed(0)}</div>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', color: 'var(--text-secondary)', marginTop: 3 }}>SCORE</div>
           </div>
         </div>
       </div>
 
-      <div className="flex gap-3 mt-2 text-xs" style={{ color: COLORS.inkSoft }}>
-        <span>♥ {fic.kudos.toLocaleString()}</span>
-        <span>⚑ {fic.bookmarks.toLocaleString()}</span>
-        <span>◉ {fic.hits.toLocaleString()}</span>
+      <div className="row num" style={{ gap: 16, fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)' }}>
+        <span className="row" style={{ gap: 5 }} aria-label={`${fic.kudos.toLocaleString()} kudos`}><Heart />{fic.kudos.toLocaleString()}</span>
+        <span className="row" style={{ gap: 5 }} aria-label={`${fic.bookmarks.toLocaleString()} bookmarks`}><BookmarkIcon />{fic.bookmarks.toLocaleString()}</span>
+        <span className="row" style={{ gap: 5 }} aria-label={`${fic.hits.toLocaleString()} hits`}><Eye />{fic.hits.toLocaleString()}</span>
       </div>
 
       {fic.tags.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mt-2 items-center">
+        <div className="wrap" style={{ gap: 6, alignItems: 'center' }}>
           {fic.tags.slice(0, tagsExpanded ? fic.tags.length : TAG_PREVIEW).map(t => (
-            <span key={t} className="text-[11px] px-2 py-0.5 rounded" style={{ backgroundColor: COLORS.paper, color: COLORS.inkSoft }}>{t}</span>
+            <span key={t} className="tag">{t}</span>
           ))}
           {fic.tags.length > TAG_PREVIEW && (
-            <button onClick={() => setTagsExpanded(v => !v)} className="text-[11px] px-2 py-0.5 font-medium" style={{ color: COLORS.maroon }}>
+            <button onClick={() => setTagsExpanded(v => !v)} className="link">
               {tagsExpanded ? 'Show less' : `+${fic.tags.length - TAG_PREVIEW} more`}
             </button>
           )}
@@ -1114,44 +1380,42 @@ function FicCard({ fic, scores, ficIndex, onUpdate, onRetry, onUpdateRecommendat
       )}
 
       {fic.summary && (
-        <div className="mt-3">
-          <p className="text-sm leading-snug" style={{ color: COLORS.inkSoft, fontFamily: "'Lora', serif", whiteSpace: 'pre-line' }}>{summaryText}</p>
+        <div>
+          <p className="t-body" style={{ whiteSpace: 'pre-line' }}>{summaryText}</p>
           {summaryIsLong && (
-            <button onClick={() => setSummaryExpanded(v => !v)} className="text-xs font-medium mt-1" style={{ color: COLORS.maroon }}>
+            <button onClick={() => setSummaryExpanded(v => !v)} className="link" style={{ paddingLeft: 0 }}>
               {summaryExpanded ? 'Show less' : 'Show more'}
             </button>
           )}
         </div>
       )}
 
-      <div className="flex items-center justify-between mt-3">
-        <a href={fic.link} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm font-medium py-2 px-1 -m-1" style={{ color: COLORS.maroon }}>
-          Read on AO3 <ExternalLink size={14} />
+      <div className="row" style={{ gap: 8 }}>
+        <a href={fic.link} target="_blank" rel="noopener noreferrer" className="btn btn-secondary" style={{ padding: '0 14px' }}>
+          AO3 <ExternalLink size={14} />
         </a>
-        <div className="flex items-center gap-3">
-          {(status === STATUS_UNREAD || status === STATUS_TBR || status === STATUS_SKIPPED) && (
-            <button onClick={() => onUpdate(fic.id, { status: STATUS_READING, dnr: 0, dnrTags: [], dnrCategory: false })}
-              className="text-sm font-semibold px-3.5 rounded-full border" style={{ minHeight: 40, borderColor: COLORS.gold, color: COLORS.gold, backgroundColor: COLORS.paperCard }}>
-              Start reading
-            </button>
-          )}
-          {status === STATUS_READ && (
-            <button onClick={() => onUpdate(fic.id, { status: STATUS_READING })}
-              className="text-sm font-semibold px-3.5 rounded-full border" style={{ minHeight: 40, borderColor: COLORS.readGreen, color: COLORS.readGreen, backgroundColor: COLORS.paperCard }}>
-              Read again
-            </button>
-          )}
-          <button onClick={() => onToggleExpand(fic.id)} className="p-2 -m-2" aria-label="Toggle status controls">
-            {expanded ? <ChevronUp size={18} color={COLORS.inkSoft} /> : <ChevronDown size={18} color={COLORS.inkSoft} />}
+        {(status === STATUS_UNREAD || status === STATUS_TBR || status === STATUS_SKIPPED) && (
+          <button onClick={() => onUpdate(fic.id, { status: STATUS_READING, dnr: 0, dnrTags: [], dnrCategory: false })} className="btn btn-primary grow">
+            Start reading
           </button>
-        </div>
+        )}
+        {status === STATUS_READ && (
+          <button onClick={() => onUpdate(fic.id, { status: STATUS_READING })} className="btn btn-primary grow">
+            Read again
+          </button>
+        )}
+        <span className="grow" style={{ flexGrow: (status === STATUS_UNREAD || status === STATUS_TBR || status === STATUS_SKIPPED || status === STATUS_READ) ? 0 : 1 }}></span>
+        <button onClick={() => onToggleExpand(fic.id)} className="icon-btn" aria-label="Toggle status controls" aria-expanded={!!expanded}>
+          {expanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+        </button>
       </div>
 
       {expanded && (
         <StatusPicker ficId={fic.id} status={status} dnr={scores.dnr[ficIndex]} dnrTags={fic.dnrTags} dnrCategory={fic.dnrCategory} enjoyment={fic.enjoyment} kg={scores.kg[ficIndex]} bk={scores.bk[ficIndex]} tags={fic.tags} category={fic.category} onUpdate={onUpdate}
-          reading={{ dateStarted: fic.dateStarted, dateRead: fic.dateRead, timesRead: fic.timesRead }} canAddDateRead={canAddDateRead} />
+          reading={{ dateStarted: fic.dateStarted, dateRead: fic.dateRead, timesRead: fic.timesRead }} canAddDateRead={canAddDateRead}
+          title={fic.title} authors={fic.authors} />
       )}
-    </div>
+    </article>
   );
 }
 
@@ -1164,50 +1428,43 @@ function ReadingShelfItem({ fic, onUpdate, onStep, onRetry }) {
   const btn = { minHeight: 44 };
 
   return (
-    <div className="rounded-md p-3.5 mb-2.5" style={{ backgroundColor: COLORS.paperCard, border: `1px solid ${COLORS.line}`, borderLeft: `4px solid ${accent}` }}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <h3 className="text-base leading-snug" style={{ color: COLORS.ink, fontFamily: "'Lora', serif", fontWeight: 600 }}>
+    <div className="card stack" style={{ gap: 12 }}>
+      <div className="row" style={{ alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+        <div style={{ minWidth: 0 }}>
+          <h3 className="t-shelf">
             {fic.title}
-            {paused && <span className="ml-2 align-middle text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full" style={{ backgroundColor: COLORS.pausedSlate, color: '#FFFFFF' }}>Paused</span>}
+            {paused && <span className="pill" style={{ marginLeft: 8, verticalAlign: 'middle', background: 'var(--grey-block)', color: 'var(--on-grey)' }}><PauseIcon size={10} />Paused</span>}
           </h3>
-          {fic.authors.length > 0 && (<p className="text-xs italic" style={{ color: COLORS.inkSoft }}>by {fic.authors.join(', ')}</p>)}
+          {fic.authors.length > 0 && (<div className="t-meta num" style={{ marginTop: 2 }}>{fic.authors.join(', ')} · {fic.words.toLocaleString()} words</div>)}
         </div>
-        <a href={fic.link} target="_blank" rel="noopener noreferrer" className="shrink-0 p-2 -m-2" aria-label="Open on AO3"><ExternalLink size={16} color={COLORS.maroon} /></a>
+        <a href={fic.link} target="_blank" rel="noopener noreferrer" className="icon-btn" aria-label="Open on AO3"><ExternalLink size={16} /></a>
       </div>
 
-      <div className="flex items-center gap-3 mt-2.5">
-        <div className="flex-1 rounded-full overflow-hidden" style={{ height: 6, backgroundColor: COLORS.line }} role="progressbar" aria-valuemin={0} aria-valuemax={total} aria-valuenow={fic.chaptersRead}>
-          <div style={{ width: `${pct}%`, height: '100%', backgroundColor: accent }} />
+      <div className="row" style={{ gap: 10 }}>
+        <div className="track" role="progressbar" aria-label="Chapters read" aria-valuemin={0} aria-valuemax={total} aria-valuenow={fic.chaptersRead}>
+          <div style={{ width: `${pct}%`, background: accent }} />
         </div>
-        <span className="text-xs font-semibold tabular-nums" style={{ color: COLORS.ink }}>{fic.chaptersRead} / {fic.chapters}</span>
-        <div className="flex gap-1.5">
-          <button onClick={() => onStep(fic.id, -1)} aria-label="One chapter back" className="rounded-full border text-lg font-semibold" style={{ ...btn, minWidth: 44, borderColor: COLORS.line, color: COLORS.ink, backgroundColor: COLORS.paperCard }}>−</button>
-          <button onClick={() => onStep(fic.id, 1)} aria-label="One chapter forward" className="rounded-full border text-lg font-semibold" style={{ ...btn, minWidth: 44, borderColor: COLORS.line, color: COLORS.ink, backgroundColor: COLORS.paperCard }}>+</button>
-        </div>
+        <span className="num" style={{ fontSize: 13, fontWeight: 800 }}>{fic.chaptersRead} / {fic.chapters} ch</span>
+        <button onClick={() => onStep(fic.id, -1)} aria-label="One chapter back" className="icon-btn" style={{ fontSize: 20, fontWeight: 700 }}>−</button>
+        <button onClick={() => onStep(fic.id, 1)} aria-label="One chapter forward" className="icon-btn" style={{ fontSize: 20, fontWeight: 700 }}>+</button>
       </div>
 
       {panel === null && (
-        <div className="flex gap-2 mt-2.5 flex-wrap">
-          <button onClick={() => setPanel('finish')} className="text-sm px-4 rounded-full font-semibold" style={{ ...btn, backgroundColor: COLORS.ink, color: COLORS.paperCard }}>Finish</button>
-          <button onClick={() => onUpdate(fic.id, { status: paused ? STATUS_READING : STATUS_PAUSED })} className="text-sm px-4 rounded-full border font-medium" style={{ ...btn, borderColor: COLORS.line, color: COLORS.ink, backgroundColor: COLORS.paperCard }}>{paused ? 'Resume' : 'Pause'}</button>
-          <button onClick={() => setPanel('dnf')} className="text-sm px-4 rounded-full border font-medium" style={{ ...btn, borderColor: COLORS.dnfPurple, color: COLORS.dnfPurple, backgroundColor: COLORS.paperCard }}>DNF</button>
+        <div className="row" style={{ gap: 8 }}>
+          <button onClick={() => setPanel('finish')} className="btn btn-primary grow">Finish</button>
+          <button onClick={() => onUpdate(fic.id, { status: paused ? STATUS_READING : STATUS_PAUSED })} className="btn btn-secondary grow">{paused ? 'Resume' : 'Pause'}</button>
+          <button onClick={() => setPanel('dnf')} className="btn btn-danger grow">DNF</button>
         </div>
       )}
       {panel !== null && (
         <StatusPicker ficId={fic.id} status={fic.status} dnr={fic.dnr} dnrTags={fic.dnrTags} dnrCategory={fic.dnrCategory} enjoyment={fic.enjoyment}
           kg={fic.kg} bk={fic.bk} tags={fic.tags} category={fic.category} onUpdate={onUpdate}
           panelOnly initialPending={panel === 'finish' ? STATUS_READ : STATUS_DNF}
-          onDone={() => setPanel(null)} onCancel={() => setPanel(null)} />
+          onDone={() => setPanel(null)} onCancel={() => setPanel(null)}
+          title={fic.title} authors={fic.authors} />
       )}
 
-      {fic.syncState === 'syncing' && (<p className="text-[10px] mt-1.5" style={{ color: COLORS.inkSoft }}>Saving to sheet…</p>)}
-      {fic.syncState === 'error' && (
-        <div className="flex flex-col mt-1.5">
-          <button onClick={() => onRetry(fic.id)} className="text-[10px] font-semibold underline text-left" style={{ color: COLORS.maroon }}>Save failed — tap to retry</button>
-          {fic.syncError && (<span className="text-[10px]" style={{ color: COLORS.maroon }}>{fic.syncError}</span>)}
-        </div>
-      )}
+      <SyncNote fic={fic} onRetry={onRetry} />
     </div>
   );
 }
@@ -1220,33 +1477,33 @@ function CurrentlyReadingShelf({ fics, onUpdate, onStep, onRetry, missingCols })
   [fics]);
   if (items.length === 0) return null;
   return (
-    <div className="mb-4">
-      <div className="flex items-center justify-between mb-1.5">
-        <h2 className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: COLORS.inkSoft }}>Currently reading ({items.length})</h2>
-        <button onClick={() => setOpen(v => !v)} className="text-[11px] underline" style={{ color: COLORS.inkSoft }}>{open ? 'Hide' : 'Show'}</button>
+    <section id="reading-shelf" className="stack" style={{ gap: 10, scrollMarginTop: 16 }}>
+      <div className="row" style={{ justifyContent: 'space-between' }}>
+        <h2 className="t-section row" style={{ gap: 8 }}>Currently reading <span className="pill num" style={{ background: 'var(--lime)', color: '#111111', fontSize: 13 }}>{items.length}</span></h2>
+        <button onClick={() => setOpen(v => !v)} className="btn btn-text" aria-expanded={open}>{open ? 'Hide' : 'Show'}</button>
       </div>
       {open && missingCols.length > 0 && (
-        <p className="text-[11px] mb-2" style={{ color: COLORS.inkSoft }}>Add {missingCols.map(c => `"${c}"`).join(', ')} to your Data List tab to keep these between sessions.</p>
+        <p className="t-caption" style={{ margin: 0, color: 'var(--warn-text)' }}>Add {missingCols.map(c => `"${c}"`).join(', ')} to your Data List tab to keep these between sessions.</p>
       )}
       {open && items.map(f => (<ReadingShelfItem key={f.id} fic={f} onUpdate={onUpdate} onStep={onStep} onRetry={onRetry} />))}
-    </div>
+    </section>
   );
 }
 
 function SignInScreen({ onSignIn, gisReady, authError }) {
   return (
-    <div className="h-screen w-full flex items-center justify-center p-6" style={{ backgroundColor: COLORS.paper, fontFamily: "'Inter', system-ui, sans-serif" }}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Lora:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap');`}</style>
-      <div className="max-w-sm w-full text-center">
-        <h1 className="text-2xl mb-2" style={{ color: COLORS.ink, fontFamily: "'Lora', serif", fontWeight: 700 }}>Sign in to sync</h1>
-        <p className="text-sm mb-4" style={{ color: COLORS.inkSoft }}>
+    <div className="row" style={{ minHeight: '100vh', justifyContent: 'center', padding: 24 }}>
+      <div className="card stack" style={{ maxWidth: 380, width: '100%', gap: 14, textAlign: 'center', padding: 24 }}>
+        <div className="t-fandom">{FANDOM_LINE}</div>
+        <h1 className="t-app"><span className="hl">{APP_NAME}</span></h1>
+        <p className="t-body">
           Sign in with the Google account that owns (or can edit) your Hollanov sheet. Marking a fic here will write straight back to it.
         </p>
-        <button onClick={onSignIn} disabled={!gisReady} className="w-full py-2.5 rounded-full text-sm font-semibold" style={{ backgroundColor: COLORS.ink, color: COLORS.paperCard }}>
+        <button onClick={onSignIn} disabled={!gisReady} className="btn btn-primary btn-lg" style={{ width: '100%' }}>
           {gisReady ? 'Sign in with Google' : 'Loading…'}
         </button>
-        {authError && (<p className="text-xs mt-3" style={{ color: COLORS.maroon }}>{authError}</p>)}
-        <p className="text-[11px] mt-4" style={{ color: COLORS.inkSoft }}>
+        {authError && (<p className="t-meta" style={{ margin: 0, color: 'var(--error-text)' }}>{authError}</p>)}
+        <p className="t-caption" style={{ margin: 0 }}>
           You may see an "unverified app" warning — that's expected for a personal project. Click Advanced → Go to (unsafe) to continue.
         </p>
       </div>
@@ -1281,25 +1538,23 @@ function ExportPanel({ fics, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.4)' }} onClick={onClose}>
-      <div className="w-full sm:max-w-lg max-h-[80vh] rounded-t-2xl sm:rounded-2xl p-4 overflow-y-auto" style={{ backgroundColor: COLORS.paper }} onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="text-lg" style={{ color: COLORS.ink, fontFamily: "'Lora', serif", fontWeight: 700 }}>Backup current list</h2>
-          <button onClick={onClose} className="p-2 -m-2"><X size={18} color={COLORS.inkSoft} /></button>
-        </div>
-        <p className="text-xs mb-3" style={{ color: COLORS.inkSoft }}>
-          Since marks now write straight to your sheet, this is just a snapshot backup of everything as it currently stands — not something you need day-to-day.
-        </p>
-        <div className="flex gap-2 mb-3">
-          <button onClick={copyToClipboard} className="flex-1 py-2.5 rounded-full text-sm font-semibold" style={{ backgroundColor: COLORS.ink, color: COLORS.paperCard }}>
-            {copied ? 'Copied!' : 'Copy to clipboard'}
-          </button>
-          <button onClick={downloadCSV} className="flex items-center gap-1.5 px-4 py-2.5 rounded-full text-sm font-semibold border" style={{ borderColor: COLORS.line, color: COLORS.ink, backgroundColor: COLORS.paperCard }}>
-            <Download size={14} /> CSV
-          </button>
-        </div>
+    <Sheet label="Backup current list" onClose={onClose}>
+      <div className="row" style={{ justifyContent: 'space-between', gap: 8 }}>
+        <h2 className="t-sheet">Backup current list</h2>
+        <button onClick={onClose} className="icon-btn" aria-label="Close"><X size={18} /></button>
       </div>
-    </div>
+      <p className="t-body">
+        Since marks now write straight to your sheet, this is just a snapshot backup of everything as it currently stands — not something you need day-to-day.
+      </p>
+      <div className="row" style={{ gap: 8 }}>
+        <button onClick={copyToClipboard} className="btn btn-primary btn-lg grow">
+          {copied ? 'Copied!' : 'Copy to clipboard'}
+        </button>
+        <button onClick={downloadCSV} className="btn btn-secondary btn-lg">
+          <Download size={16} /> CSV
+        </button>
+      </div>
+    </Sheet>
   );
 }
 
@@ -1391,6 +1646,16 @@ function HollanovRolladexLive() {
 
   useEffect(() => { setVisibleCount(PAGE_SIZE); }, [search, statusFilter, ratingFilter, wordFilter, sortBy]);
 
+  // UI glue for the floating nav (layout only; no data or logic involved).
+  const [navSection, setNavSection] = useState('fics');
+  const goTo = (section) => {
+    setNavSection(section);
+    if (section === 'fics') window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (section === 'reading') { const el = document.getElementById('reading-shelf'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+  };
+  const activeNav = filtersOpen ? 'filters' : showSettings ? 'account' : navSection;
+  const SORT_NOTE = { score: 'by score', qscore: 'by popularity', recent: 'newest first', kudos: 'by kudos' };
+
   if (!accessToken) return <SignInScreen onSignIn={signIn} gisReady={gisReady} authError={authError} />;
 
   const activeFilterCount = ratingFilter.size + wordFilter.size + selectedTags.length + excludedTags.length;
@@ -1399,45 +1664,35 @@ function HollanovRolladexLive() {
   const visible = filteredIndices.slice(0, visibleCount);
 
   return (
-    <div className="h-screen w-full flex flex-col overflow-hidden" style={{ backgroundColor: COLORS.paper, fontFamily: "'Inter', system-ui, sans-serif" }}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Lora:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap');`}</style>
-
-      <div className="px-4 pt-4 pb-3 shrink-0 overflow-y-auto" style={{ borderBottom: `2px solid ${COLORS.maroon}`, maxHeight: '70vh' }}>
-        <div className="flex items-baseline justify-between">
-          <h1 className="text-2xl tracking-tight" style={{ color: COLORS.ink, fontFamily: "'Lora', serif", fontWeight: 700 }}>Hollanov Fics List</h1>
-          <div className="flex items-center gap-2">
-            <span className="text-xs" style={{ color: COLORS.inkSoft }}>{filteredIndices.length} / {fics.length}</span>
-            <button onClick={refresh} disabled={syncStatus === 'loading'} className="p-1.5 -m-1.5 rounded-full active:scale-95" aria-label="Refresh from sheet">
-              <RefreshCw size={15} color={COLORS.inkSoft} style={syncStatus === 'loading' ? { animation: 'spin 1s linear infinite' } : {}} />
-            </button>
+    <div className="app stack" style={{ gap: 18 }}>
+      <header className="stack" style={{ gap: 12 }}>
+        <div className="row" style={{ justifyContent: 'space-between', gap: 12 }}>
+          <div className="stack" style={{ gap: 2, minWidth: 0 }}>
+            <div className="t-fandom">{FANDOM_LINE}</div>
+            <h1 className="t-app"><span className="hl">{APP_NAME}</span></h1>
           </div>
+          <button onClick={refresh} disabled={syncStatus === 'loading'} className="icon-btn raised" aria-label="Refresh from sheet">
+            <span style={{ display: 'inline-flex', animation: syncStatus === 'loading' ? 'spin 1s linear infinite' : 'none' }}><RefreshCw size={18} /></span>
+          </button>
         </div>
-        <div className="flex items-center justify-between mt-0.5 flex-wrap gap-x-3">
-          <p className="text-[11px]" style={{ color: COLORS.inkSoft }}>
+
+        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+          <span className="count-pill num">{filteredIndices.length.toLocaleString()} of {fics.length.toLocaleString()}</span>
+          <span className="t-meta">
             {syncStatus === 'loading' && 'Syncing…'}
             {syncStatus === 'success' && lastSynced && `Synced ${lastSynced.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
-            {syncStatus === 'error' && <span style={{ color: COLORS.maroon }}>Sync failed — showing last loaded data</span>}
-          </p>
-          <div className="flex items-center gap-3">
-            <button onClick={() => setShowExport(true)} className="text-[11px] underline" style={{ color: COLORS.inkSoft }}>Backup list</button>
-            <button onClick={() => setShowSettings(v => !v)} className="text-[11px] underline" style={{ color: COLORS.inkSoft }}>Account</button>
-          </div>
+            {syncStatus === 'error' && <span style={{ color: 'var(--error-text)' }}>Sync failed — showing last loaded data</span>}
+          </span>
         </div>
 
-        {showSettings && (
-          <div className="mt-2 p-3 rounded-lg text-xs" style={{ backgroundColor: COLORS.paperCard, border: `1px solid ${COLORS.line}` }}>
-            <p className="mb-2" style={{ color: COLORS.inkSoft }}>Signed in and syncing to your Hollanov sheet.</p>
-            <button onClick={signOut} className="font-medium" style={{ color: COLORS.maroon }}>Sign out</button>
-          </div>
-        )}
-        {syncStatus === 'error' && (<div className="mt-2 p-2.5 rounded-lg text-xs" style={{ backgroundColor: '#FBEAEA', color: COLORS.maroon }}>{errorMsg}</div>)}
+        {syncStatus === 'error' && (<div className="banner error" role="alert">{errorMsg}</div>)}
         {failedSyncCount > 0 && (
-          <div className="mt-2 p-2.5 rounded-lg text-xs font-medium" style={{ backgroundColor: '#FBEAEA', color: COLORS.maroon }}>
+          <div className="banner error" role="alert" style={{ fontWeight: 700 }}>
             {failedSyncCount} fic{failedSyncCount === 1 ? '' : 's'} failed to save to your sheet — scroll down to find the red "tap to retry" note on each.
           </div>
         )}
         {(readingMissing.length > 0 || logMissing) && (
-          <div className="mt-2 p-2.5 rounded-lg text-xs" style={{ backgroundColor: '#FFF6E0', color: '#7A5A10', border: '1px solid #E8D5A0' }}>
+          <div className="banner warn">
             Reading tracker isn't fully set up, so some things aren't being saved:
             {readingMissing.length > 0 && <> no column named {readingMissing.map(c => `"${c}"`).join(', ')}.</>}
             {logMissing && <> no tab named "Reading Log".</>}
@@ -1445,121 +1700,149 @@ function HollanovRolladexLive() {
           </div>
         )}
         {syncingCount > 0 && failedSyncCount === 0 && (
-          <div className="mt-2 p-2.5 rounded-lg text-xs" style={{ backgroundColor: COLORS.paperCard, border: `1px solid ${COLORS.line}`, color: COLORS.inkSoft }}>
+          <div className="banner info">
             Saving {syncingCount} change{syncingCount === 1 ? '' : 's'} to your sheet…
           </div>
         )}
 
-        <div className="mt-3 flex items-center gap-2 rounded-full px-3 py-2.5" style={{ backgroundColor: COLORS.paperCard, border: `1px solid ${COLORS.line}` }}>
-          <Search size={16} color={COLORS.inkSoft} />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search title or tag…" className="flex-1 bg-transparent outline-none text-sm" style={{ color: COLORS.ink }} />
-          {search && (<button onClick={() => setSearch('')} aria-label="Clear search"><X size={16} color={COLORS.inkSoft} /></button>)}
-        </div>
+        <label className="search">
+          <Search size={18} />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search title, tag or author" aria-label="Search fics" />
+          {search && (<button onClick={() => setSearch('')} className="icon-btn" style={{ background: 'transparent' }} aria-label="Clear search"><X size={16} /></button>)}
+        </label>
 
-        <div className="mt-3 flex items-center gap-2 overflow-x-auto pb-1">
-          <button onClick={() => setFiltersOpen(v => !v)} className="shrink-0 flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-full"
-            style={{ backgroundColor: filtersOpen ? COLORS.ink : COLORS.paperCard, color: filtersOpen ? COLORS.paperCard : COLORS.ink, border: `1px solid ${COLORS.line}` }}>
-            <SlidersHorizontal size={14} /> Filters {activeFilterCount > 0 ? `(${activeFilterCount})` : ''}
+        <div className="hscroll" role="group" aria-label="Status filters">
+          <button onClick={() => setFiltersOpen(v => !v)} className="chip" aria-expanded={filtersOpen}
+            style={{ background: 'var(--inverse)', color: 'var(--on-inverse)', fontWeight: 700, boxShadow: 'none' }}>
+            <SlidersHorizontal size={16} /> Filters {activeFilterCount > 0 ? `(${activeFilterCount})` : ''}
           </button>
           {[STATUS_UNREAD, STATUS_TBR, STATUS_READING, STATUS_PAUSED, STATUS_READ, STATUS_DNF, STATUS_SKIPPED, STATUS_NOTINT].map(s => (
-            <Chip key={s} active={statusFilter.has(s)} onClick={() => toggleSetValue(setStatusFilter, statusFilter, s)} color={STATUS_COLOR[s]}>{STATUS_LABELS[s]}</Chip>
+            <Chip key={s} active={statusFilter.has(s)} onClick={() => toggleSetValue(setStatusFilter, statusFilter, s)} color={STATUS_COLOR[s]} textColor={STATUS_ON[s]}>{STATUS_LABELS[s]}</Chip>
           ))}
-          <Chip active={recommendedOnly} onClick={() => setRecommendedOnly(v => !v)} color={COLORS.recGold}>Recommended</Chip>
+          <Chip active={recommendedOnly} onClick={() => setRecommendedOnly(v => !v)}>Recommended</Chip>
         </div>
 
-        <div className="mt-2 flex items-center gap-2">
-          <span className="text-xs" style={{ color: COLORS.inkSoft }}>Sort:</span>
+        <div className="seg" role="group" aria-label="Sort by">
           {[['score', 'Score'], ['qscore', 'Popularity'], ['recent', 'Newest'], ['kudos', 'Kudos']].map(([key, label]) => (
-            <button key={key} onClick={() => setSortBy(key)} className="text-xs font-medium px-2.5 py-1 rounded-full" style={{ backgroundColor: sortBy === key ? COLORS.maroon : 'transparent', color: sortBy === key ? COLORS.paperCard : COLORS.inkSoft }}>{label}</button>
+            <button key={key} onClick={() => setSortBy(key)} aria-pressed={sortBy === key}>{label}</button>
           ))}
         </div>
+      </header>
 
-        {filtersOpen && (
-          <div className="mt-3 space-y-3">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: COLORS.inkSoft }}>Rating</p>
-              <div className="flex flex-wrap gap-1.5">{ALL_RATINGS.map(r => (<Chip key={r} active={ratingFilter.has(r)} onClick={() => toggleSetValue(setRatingFilter, ratingFilter, r)}>{r}</Chip>))}</div>
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: COLORS.inkSoft }}>Word Count</p>
-              <div className="flex flex-wrap gap-1.5">{WORD_BUCKETS.map(([label], i) => (<Chip key={label} active={wordFilter.has(i)} onClick={() => toggleSetValue(setWordFilter, wordFilter, i)}>{label}</Chip>))}</div>
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: COLORS.inkSoft }}>Include Tags</p>
-              {selectedTags.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mb-2">
-                  {selectedTags.map(t => (
-                    <span key={t} className="inline-flex items-center gap-1.5 text-[12px] font-medium px-2.5 py-1 rounded-full" style={{ backgroundColor: COLORS.maroon, color: '#FFFFFF' }}>
-                      {t}
-                      <button onClick={() => removeTag(t)} aria-label={`Remove ${t} filter`}><X size={12} /></button>
-                    </span>
-                  ))}
-                </div>
-              )}
-              <div className="flex items-center gap-2 rounded-full px-3 py-2" style={{ backgroundColor: COLORS.paperCard, border: `1px solid ${COLORS.line}` }}>
-                <Search size={14} color={COLORS.inkSoft} />
-                <input value={tagQuery} onChange={e => setTagQuery(e.target.value)} placeholder={tagQuery ? 'Search tags…' : 'Top 5 shown — or search…'}
-                  className="flex-1 bg-transparent outline-none text-sm" style={{ color: COLORS.ink }} />
-              </div>
-              {tagSuggestions.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {tagSuggestions.map(t => (
-                    <button key={t} onClick={() => addTag(t)} className="text-[12px] px-2.5 py-1 rounded-full border"
-                      style={{ borderColor: COLORS.line, backgroundColor: COLORS.paper, color: COLORS.ink }}>
-                      {t} <span style={{ color: COLORS.inkSoft }}>({TAG_FREQUENCY.get(t)})</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: COLORS.inkSoft }}>Exclude Tags</p>
-              {excludedTags.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mb-2">
-                  {excludedTags.map(t => (
-                    <span key={t} className="inline-flex items-center gap-1.5 text-[12px] font-medium px-2.5 py-1 rounded-full" style={{ backgroundColor: '#A13A3A', color: '#FFFFFF' }}>
-                      {t}
-                      <button onClick={() => removeExcludeTag(t)} aria-label={`Remove ${t} exclusion`}><X size={12} /></button>
-                    </span>
-                  ))}
-                </div>
-              )}
-              <div className="flex items-center gap-2 rounded-full px-3 py-2" style={{ backgroundColor: COLORS.paperCard, border: `1px solid ${COLORS.line}` }}>
-                <Search size={14} color={COLORS.inkSoft} />
-                <input value={excludeTagQuery} onChange={e => setExcludeTagQuery(e.target.value)} placeholder={excludeTagQuery ? 'Search tags…' : 'Top 5 shown — or search…'}
-                  className="flex-1 bg-transparent outline-none text-sm" style={{ color: COLORS.ink }} />
-              </div>
-              {excludeTagSuggestions.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {excludeTagSuggestions.map(t => (
-                    <button key={t} onClick={() => addExcludeTag(t)} className="text-[12px] px-2.5 py-1 rounded-full border"
-                      style={{ borderColor: COLORS.line, backgroundColor: COLORS.paper, color: COLORS.ink }}>
-                      {t} <span style={{ color: COLORS.inkSoft }}>({TAG_FREQUENCY.get(t)})</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+      <CurrentlyReadingShelf fics={fics} onUpdate={updateFic} onStep={stepChapters} onRetry={retrySync} missingCols={readingMissing} />
+
+      <main id="fic-list" className="stack" style={{ gap: 12 }}>
+        <h2 className="t-section">Fics <span className="t-meta">· {SORT_NOTE[sortBy]}</span></h2>
+        {syncStatus === 'loading' && fics.length === 0 && (
+          <div className="card row" style={{ gap: 10, justifyContent: 'center', color: 'var(--text-secondary)' }}>
+            <span style={{ display: 'inline-flex', color: 'var(--accent-text)', animation: 'spin 1s linear infinite' }}><RefreshCw size={18} /></span>
+            <span className="t-meta">Loading your fic list…</span>
           </div>
         )}
-      </div>
-
-      <div className="flex-1 overflow-y-auto px-4 pt-3 pb-6">
-        <CurrentlyReadingShelf fics={fics} onUpdate={updateFic} onStep={stepChapters} onRetry={retrySync} missingCols={readingMissing} />
-        {syncStatus === 'loading' && fics.length === 0 && (<div className="text-center mt-16" style={{ color: COLORS.inkSoft }}><p className="text-sm">Loading your fic list…</p></div>)}
-        {visible.length === 0 && syncStatus !== 'loading' && (<div className="text-center mt-16" style={{ color: COLORS.inkSoft }}><p className="text-sm">No fics match these filters.</p></div>)}
+        {visible.length === 0 && syncStatus !== 'loading' && (
+          <div className="card" style={{ textAlign: 'center' }}><span className="t-meta">No fics match these filters.</span></div>
+        )}
         {scores && visible.map(idx => (
           <FicCard key={fics[idx].id} fic={fics[idx]} ficIndex={idx} scores={scores} onUpdate={updateFic} onRetry={retrySync} onUpdateRecommendation={updateRecommendation} canAddDateRead={!readingMissing.includes('Date Read')}
             expanded={expandedId === fics[idx].id} onToggleExpand={(id) => setExpandedId(prev => (prev === id ? null : id))} />
         ))}
         {visibleCount < filteredIndices.length && (
-          <button onClick={() => setVisibleCount(v => v + PAGE_SIZE)} className="w-full py-3 rounded-full text-sm font-medium mt-2" style={{ backgroundColor: COLORS.paperCard, border: `1px solid ${COLORS.line}`, color: COLORS.maroon }}>
+          <button onClick={() => setVisibleCount(v => v + PAGE_SIZE)} className="btn btn-secondary btn-lg" style={{ width: '100%', background: 'var(--surface)', boxShadow: 'var(--shadow-control)' }}>
             Load more ({filteredIndices.length - visibleCount} remaining)
           </button>
         )}
-      </div>
+      </main>
+
+      {filtersOpen && (
+        <Sheet label="Filters" onClose={() => setFiltersOpen(false)}>
+          <div className="row" style={{ justifyContent: 'space-between' }}>
+            <h2 className="t-sheet">Filters</h2>
+            <button onClick={() => setFiltersOpen(false)} className="icon-btn" aria-label="Close filters"><X size={18} /></button>
+          </div>
+          <div className="stack" style={{ gap: 8 }}>
+            <div className="t-caps">Rating</div>
+            <div className="wrap" style={{ gap: 8 }}>{ALL_RATINGS.map(r => (<Chip key={r} active={ratingFilter.has(r)} onClick={() => toggleSetValue(setRatingFilter, ratingFilter, r)}>{r}</Chip>))}</div>
+          </div>
+          <div className="stack" style={{ gap: 8 }}>
+            <div className="t-caps">Word count</div>
+            <div className="wrap" style={{ gap: 8 }}>{WORD_BUCKETS.map(([label], i) => (<Chip key={label} active={wordFilter.has(i)} onClick={() => toggleSetValue(setWordFilter, wordFilter, i)}>{label}</Chip>))}</div>
+          </div>
+          <div className="stack" style={{ gap: 8 }}>
+            <div className="t-caps">Include tags</div>
+            {selectedTags.length > 0 && (
+              <div className="wrap" style={{ gap: 6 }}>
+                {selectedTags.map(t => (
+                  <span key={t} className="pill" style={{ background: 'var(--accent)', color: 'var(--on-accent)', fontSize: 13, fontWeight: 700, padding: '0 0 0 14px', minHeight: 44 }}>
+                    {t}
+                    <button onClick={() => removeTag(t)} aria-label={`Remove ${t} filter`} className="row" style={{ width: 44, height: 44, justifyContent: 'center' }}><X size={14} /></button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <label className="search sunken">
+              <Search size={16} />
+              <input value={tagQuery} onChange={e => setTagQuery(e.target.value)} placeholder={tagQuery ? 'Search tags…' : 'Top 5 shown — or search…'} aria-label="Search tags to include" />
+            </label>
+            {tagSuggestions.length > 0 && (
+              <div className="wrap" style={{ gap: 6 }}>
+                {tagSuggestions.map(t => (
+                  <button key={t} onClick={() => addTag(t)} className="pick" style={{ background: 'var(--surface-sunken)' }}>
+                    {t} <span className="t-meta">({TAG_FREQUENCY.get(t)})</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="stack" style={{ gap: 8 }}>
+            <div className="t-caps">Exclude tags</div>
+            {excludedTags.length > 0 && (
+              <div className="wrap" style={{ gap: 6 }}>
+                {excludedTags.map(t => (
+                  <span key={t} className="pill" style={{ background: 'var(--inverse)', color: 'var(--on-inverse)', fontSize: 13, fontWeight: 700, padding: '0 0 0 14px', minHeight: 44 }}>
+                    <span style={{ textDecoration: 'line-through' }}>{t}</span>
+                    <button onClick={() => removeExcludeTag(t)} aria-label={`Remove ${t} exclusion`} className="row" style={{ width: 44, height: 44, justifyContent: 'center' }}><X size={14} /></button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <label className="search sunken">
+              <Search size={16} />
+              <input value={excludeTagQuery} onChange={e => setExcludeTagQuery(e.target.value)} placeholder={excludeTagQuery ? 'Search tags…' : 'Top 5 shown — or search…'} aria-label="Search tags to exclude" />
+            </label>
+            {excludeTagSuggestions.length > 0 && (
+              <div className="wrap" style={{ gap: 6 }}>
+                {excludeTagSuggestions.map(t => (
+                  <button key={t} onClick={() => addExcludeTag(t)} className="pick" style={{ background: 'var(--surface-sunken)' }}>
+                    {t} <span className="t-meta">({TAG_FREQUENCY.get(t)})</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <button onClick={() => setFiltersOpen(false)} className="btn btn-primary btn-xl">Show {filteredIndices.length.toLocaleString()} fics</button>
+        </Sheet>
+      )}
+
+      {showSettings && (
+        <Sheet label="Account" onClose={() => setShowSettings(false)}>
+          <div className="row" style={{ justifyContent: 'space-between' }}>
+            <h2 className="t-sheet">Account</h2>
+            <button onClick={() => setShowSettings(false)} className="icon-btn" aria-label="Close account"><X size={18} /></button>
+          </div>
+          <p className="t-body">Signed in and syncing to your Hollanov sheet.</p>
+          <button onClick={() => { setShowSettings(false); setShowExport(true); }} className="btn btn-secondary btn-lg"><Download size={16} /> Backup list</button>
+          <button onClick={signOut} className="btn btn-text" style={{ color: 'var(--error-text)' }}>Sign out</button>
+        </Sheet>
+      )}
 
       {showExport && <ExportPanel fics={fics} onClose={() => setShowExport(false)} />}
+
+      <nav className="nav" aria-label="Sections">
+        <button onClick={() => goTo('fics')} aria-current={activeNav === 'fics' ? 'page' : undefined} aria-label="Fics"><ListIcon />{activeNav === 'fics' && 'Fics'}</button>
+        <button onClick={() => goTo('reading')} aria-current={activeNav === 'reading' ? 'page' : undefined} aria-label="Reading"><BookIcon />{activeNav === 'reading' && 'Reading'}</button>
+        <button onClick={() => setFiltersOpen(true)} aria-current={activeNav === 'filters' ? 'page' : undefined} aria-label="Filters"><SlidersHorizontal size={20} />{activeNav === 'filters' && 'Filters'}</button>
+        <button onClick={() => setShowSettings(true)} aria-current={activeNav === 'account' ? 'page' : undefined} aria-label="Account"><UserIcon />{activeNav === 'account' && 'Account'}</button>
+      </nav>
     </div>
   );
 }
