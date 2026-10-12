@@ -179,6 +179,18 @@
   /* ---------- Popover ---------- */
   .popover { position: absolute; right: 16px; top: 64px; z-index: 20; background: var(--surface); border-radius: 20px; padding: 8px;
              box-shadow: var(--shadow-float); display: flex; gap: 8px; }
+  /* ---------- Reading-session pill ---------- */
+  .app.has-session { padding-bottom: 176px; }
+  .icon-btn:disabled { opacity: 0.4; cursor: default; }
+  .session-pill { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(96px + env(safe-area-inset-bottom)); width: calc(100% - 48px);
+                  max-width: 420px; min-height: 56px; background: var(--inverse); color: var(--on-inverse); border-radius: 999px;
+                  box-shadow: var(--shadow-float); display: flex; align-items: center; gap: 6px; padding: 6px 6px 6px 8px; z-index: 31; }
+  .session-pill-main { flex: 1; min-width: 0; min-height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 8px;
+                       color: inherit; text-align: left; border-radius: 999px; }
+  .session-pill-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 700; }
+  .session-pill-time { flex-shrink: 0; font-size: 13px; font-weight: 800; }
+  .session-pill-end { flex-shrink: 0; min-height: 44px; padding: 0 18px; border-radius: 999px; background: var(--accent); color: var(--on-accent);
+                      font-size: 14px; font-weight: 800; }
 </style>
 </head>
 <body>
@@ -682,6 +694,127 @@ async function persistFicChange(ctx, prevFic, patch, transition, now) {
 }
 // </reading-feature>
 
+// <session-feature>
+// Reading-session timer. Adds "Session started" / "Session ended" rows to the Reading Log, in the
+// same columns and timestamp format as the other events. Shelf Life pairs a start with the next end
+// for the same fic on the same day, ignores sessions over 6 hours and ignores a start with no end,
+// so an end is only ever written for a session whose start was written first.
+// Plain JS (no React) so the logic can be tested on its own.
+const SESSION_MAX_MS = 6 * 60 * 60 * 1000;
+const SESSION_STORE_KEY = TOKEN_CACHE_KEY.replace(/gtoken$/, 'reading-session');
+const LOG_QUEUE_KEY = TOKEN_CACHE_KEY.replace(/gtoken$/, 'log-queue');
+const LOG_SENT_KEY = TOKEN_CACHE_KEY.replace(/gtoken$/, 'log-sent');
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function lsGet(key, fallback) {
+  try { const v = window.localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch (e) { return fallback; }
+}
+function lsSet(key, value) {
+  try {
+    if (value === null || value === undefined) window.localStorage.removeItem(key);
+    else window.localStorage.setItem(key, JSON.stringify(value));
+  } catch (e) { /* storage unavailable: the session just won't survive a reload */ }
+}
+function newLogId() { return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`; }
+
+// The active session lives in localStorage so it survives reloads, closed tabs and app switches.
+function loadActiveSession() {
+  const s = lsGet(SESSION_STORE_KEY, null);
+  return s && s.ficId && s.link && typeof s.startMs === 'number' && s.startStamp && s.startDate ? s : null;
+}
+function saveActiveSession(s) { lsSet(SESSION_STORE_KEY, s); }
+
+// A new session for `fic` (already Currently Reading), plus the Reading Log row that opens it.
+function planSessionStart(fic, nowMs) {
+  const now = melbourneNow(new Date(nowMs));
+  const session = {
+    ficId: fic.id, link: fic.link, title: fic.title,
+    startMs: nowMs, startStamp: now.stamp, startDate: now.date,
+    startChapters: fic.chaptersRead || 0, readNumber: fic.timesRead || 1,
+    startEventId: newLogId(),
+  };
+  return { session, row: [now.stamp, fic.link, fic.title, 'Session started', session.startChapters, session.readNumber] };
+}
+function sessionEndRow(session, chapters, endStamp) {
+  return [endStamp, session.link, session.title, 'Session ended', chapters, session.readNumber];
+}
+// Over 6 hours old, or started on an earlier (Melbourne) day: never auto-ended, the reader is asked.
+function isSessionForgotten(session, nowMs) {
+  return nowMs - session.startMs > SESSION_MAX_MS || melbourneNow(new Date(nowMs)).date !== session.startDate;
+}
+// Elapsed time always comes from the stored start, so it keeps counting while the app is closed.
+function formatElapsed(ms) {
+  const mins = Math.max(0, Math.floor(ms / 60000));
+  if (mins < 1) return '<1 min';
+  if (mins < 60) return `${mins} min`;
+  return `${Math.floor(mins / 60)} h ${mins % 60} min`;
+}
+function sessionDayLabel(session) {
+  const [y, m, d] = session.startDate.split('-').map(Number);
+  return `${DAY_NAMES[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]} ${d} ${MONTH_NAMES[m - 1]}`;
+}
+// Allowed end times for a forgotten session: the start's day, no more than 6 hours after the start,
+// and not in the future. Stamps are 'YYYY-MM-DD HH:MM', so they compare correctly as text.
+function sessionEndBounds(session, nowMs) {
+  const caps = [melbourneNow(new Date(session.startMs + SESSION_MAX_MS)).stamp, `${session.startDate} 23:59`, melbourneNow(new Date(nowMs)).stamp];
+  let max = caps.reduce((a, b) => (b < a ? b : a));
+  if (max < session.startStamp) max = session.startStamp;
+  return { min: session.startStamp.slice(11), max: max.slice(11) };
+}
+function sessionEndStampFor(session, hhmm, nowMs) {
+  if (!/^\d{2}:\d{2}$/.test(hhmm || '')) return null;
+  const { min, max } = sessionEndBounds(session, nowMs);
+  if (hhmm < min || hhmm > max) return null;
+  return `${session.startDate} ${hhmm}`;
+}
+
+// Outbox for session rows. Each row gets an id and waits in localStorage until the sheet has it.
+// Rows go out in the order they were added (a start always before its end), and an id that has
+// been sent is never sent again.
+function logQueueLoad() { const q = lsGet(LOG_QUEUE_KEY, []); return Array.isArray(q) ? q : []; }
+function logQueueUpdate(fn) { const next = fn(logQueueLoad()); lsSet(LOG_QUEUE_KEY, next.length ? next : null); return next; }
+function logQueueAdd(row, id) { const item = { id: id || newLogId(), row, tries: 0 }; logQueueUpdate(q => [...q, item]); return item.id; }
+function logQueueRemove(id) { logQueueUpdate(q => q.filter(it => it.id !== id)); }
+function logRowKey(r) { return [r[0], r[1], r[3], r[4], r[5]].map(v => String(v === undefined || v === null ? '' : v).trim()).join('|'); }
+
+let logFlushChain = Promise.resolve();
+// api = { appendRows(rows), readLog() } — the Sheets calls, passed in so this can be tested.
+function flushLogQueue(api) {
+  const run = logFlushChain.then(() => flushLogQueueNow(api));
+  logFlushChain = run.catch(() => {});
+  return run;
+}
+async function flushLogQueueNow(api) {
+  const sent = new Set(lsGet(LOG_SENT_KEY, []));
+  let pending = logQueueUpdate(q => q.filter(it => !sent.has(it.id)));
+  if (!pending.length) return { sent: 0, left: 0 };
+  // A row tried before may have reached the sheet even though the request failed (for example a
+  // timeout after Google saved it), so check the log before sending those rows again.
+  if (pending.some(it => it.tries > 0)) {
+    let rows;
+    try { rows = await api.readLog(); } catch (e) { return { error: e, left: pending.length }; }
+    if (rows === null) { logQueueUpdate(() => []); return { tabMissing: true, left: 0 }; }
+    const have = new Set(rows.map(logRowKey));
+    pending.filter(it => it.tries > 0 && have.has(logRowKey(it.row))).forEach(it => sent.add(it.id));
+    lsSet(LOG_SENT_KEY, [...sent].slice(-500));
+    pending = logQueueUpdate(q => q.filter(it => !sent.has(it.id)));
+    if (!pending.length) return { sent: 0, left: 0 };
+  }
+  const ids = new Set(pending.map(it => it.id));
+  logQueueUpdate(q => q.map(it => (ids.has(it.id) ? { ...it, tries: it.tries + 1 } : it)));
+  try {
+    await api.appendRows(pending.map(it => it.row));
+  } catch (e) {
+    if (e.isLogTabMissing) { logQueueUpdate(() => []); return { tabMissing: true, left: 0 }; } // same as other events: skip silently
+    return { error: e, left: logQueueLoad().length };
+  }
+  ids.forEach(id => sent.add(id));
+  lsSet(LOG_SENT_KEY, [...sent].slice(-500));
+  const left = logQueueUpdate(q => q.filter(it => !sent.has(it.id)));
+  return { sent: ids.size, left: left.length };
+}
+// </session-feature>
+
 function useSheetFics(accessToken, onAuthError) {
   const [fics, setFics] = useState([]);
   const [status, setStatus] = useState('idle');
@@ -758,12 +891,12 @@ function useSheetFics(accessToken, onAuthError) {
 
   useEffect(() => { fetchFics(); }, [fetchFics]);
 
-  const updateFic = useCallback(async (ficId, patchIn) => {
+  const updateFic = useCallback(async (ficId, patchIn, opts) => {
     // Read the current fic from a ref (kept in sync via useEffect) rather than as a
     // side effect inside a setState updater — updater functions must stay pure, since
     // React can invoke them more than once, which was silently corrupting this lookup.
     const prevFic = ficsRef.current.find(f => f.id === ficId);
-    if (!prevFic) return;
+    if (!prevFic) return false;
 
     // Chapter taps still waiting on the debounce are saved together with this change.
     let patch = patchIn;
@@ -776,8 +909,10 @@ function useSheetFics(accessToken, onAuthError) {
 
     const now = melbourneNow();
     const transition = computeReadingTransition(prevFic, patch, now);
+    // A reading session records its own chapter count ("Session ended"), so its save skips the Progress row.
+    if (opts && opts.skipLogEvents) transition.events = [];
 
-    setFics(prev => prev.map(f => f.id === ficId ? { ...f, ...patch, ...transition.fields, syncState: 'syncing', syncError: '', syncType: 'status', retryPatch: undefined } : f));
+    setFics(prev => prev.map(f => f.id === ficId ? { ...f, ...patch, ...transition.fields, syncState: 'syncing', syncError: '', syncType: 'status', retryPatch: undefined, retryOpts: undefined } : f));
 
     try {
       const ctx = {
@@ -788,10 +923,12 @@ function useSheetFics(accessToken, onAuthError) {
       await persistFicChange(ctx, prevFic, patch, transition, now);
       if (logRef.current.available === false) setLogMissing(true);
       setFics(prev => prev.map(f => f.id === ficId ? { ...f, syncState: 'idle' } : f));
+      return true;
     } catch (e) {
       // retryPatch lets "tap to retry" re-apply the change that failed (the card itself rolls back).
-      setFics(prev => prev.map(f => f.id === ficId ? { ...prevFic, syncState: 'error', syncError: e.message || String(e), syncType: 'status', retryPatch: patch } : f));
+      setFics(prev => prev.map(f => f.id === ficId ? { ...prevFic, syncState: 'error', syncError: e.message || String(e), syncType: 'status', retryPatch: patch, retryOpts: opts } : f));
       if (e.isAuthError && onAuthError) onAuthError();
+      return false;
     }
   }, [accessToken]);
   useEffect(() => { updateFicRef.current = updateFic; }, [updateFic]);
@@ -829,7 +966,7 @@ function useSheetFics(accessToken, onAuthError) {
     if (fic.syncType === 'recommendation') {
       updateRecommendation(ficId, { recommended: fic.recommended, recSource: fic.recSource });
     } else if (fic.retryPatch) {
-      updateFic(ficId, fic.retryPatch);
+      updateFic(ficId, fic.retryPatch, fic.retryOpts);
     } else {
       updateFic(ficId, { status: fic.status, dnr: fic.dnr, kg: fic.kg, bk: fic.bk, dnrTags: fic.dnrTags, dnrCategory: fic.dnrCategory, enjoyment: fic.enjoyment });
     }
@@ -1316,7 +1453,7 @@ function SyncNote({ fic, onRetry }) {
   return null;
 }
 
-function FicCard({ fic, scores, ficIndex, onUpdate, onRetry, onUpdateRecommendation, expanded, onToggleExpand, canAddDateRead }) {
+function FicCard({ fic, scores, ficIndex, onUpdate, onRetry, onUpdateRecommendation, expanded, onToggleExpand, canAddDateRead, sessionApi }) {
   const status = scores.status[ficIndex];
   const pScore = scores.pScore[ficIndex];
   const [tagsExpanded, setTagsExpanded] = useState(false);
@@ -1405,6 +1542,9 @@ function FicCard({ fic, scores, ficIndex, onUpdate, onRetry, onUpdateRecommendat
           </button>
         )}
         <span className="grow" style={{ flexGrow: (status === STATUS_UNREAD || status === STATUS_TBR || status === STATUS_SKIPPED || status === STATUS_READ) ? 0 : 1 }}></span>
+        {(status === STATUS_READING || status === STATUS_PAUSED || (expanded && (status === STATUS_UNREAD || status === STATUS_TBR))) && (
+          <SessionButton fic={fic} sessionApi={sessionApi} />
+        )}
         <button onClick={() => onToggleExpand(fic.id)} className="icon-btn" aria-label="Toggle status controls" aria-expanded={!!expanded}>
           {expanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
         </button>
@@ -1419,7 +1559,7 @@ function FicCard({ fic, scores, ficIndex, onUpdate, onRetry, onUpdateRecommendat
   );
 }
 
-function ReadingShelfItem({ fic, onUpdate, onStep, onRetry }) {
+function ReadingShelfItem({ fic, onUpdate, onStep, onRetry, sessionApi }) {
   const [panel, setPanel] = useState(null); // null | 'finish' | 'dnf'
   const paused = fic.status === STATUS_PAUSED;
   const total = Math.max(1, fic.chapters);
@@ -1428,7 +1568,7 @@ function ReadingShelfItem({ fic, onUpdate, onStep, onRetry }) {
   const btn = { minHeight: 44 };
 
   return (
-    <div className="card stack" style={{ gap: 12 }}>
+    <div id={`shelf-${fic.id}`} className="card stack" style={{ gap: 12, scrollMarginTop: 16, scrollMarginBottom: 170 }}>
       <div className="row" style={{ alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
         <div style={{ minWidth: 0 }}>
           <h3 className="t-shelf">
@@ -1437,7 +1577,10 @@ function ReadingShelfItem({ fic, onUpdate, onStep, onRetry }) {
           </h3>
           {fic.authors.length > 0 && (<div className="t-meta num" style={{ marginTop: 2 }}>{fic.authors.join(', ')} · {fic.words.toLocaleString()} words</div>)}
         </div>
-        <a href={fic.link} target="_blank" rel="noopener noreferrer" className="icon-btn" aria-label="Open on AO3"><ExternalLink size={16} /></a>
+        <div className="row" style={{ gap: 6, flexShrink: 0 }}>
+          <SessionButton fic={fic} sessionApi={sessionApi} />
+          <a href={fic.link} target="_blank" rel="noopener noreferrer" className="icon-btn" aria-label="Open on AO3"><ExternalLink size={16} /></a>
+        </div>
       </div>
 
       <div className="row" style={{ gap: 10 }}>
@@ -1469,7 +1612,7 @@ function ReadingShelfItem({ fic, onUpdate, onStep, onRetry }) {
   );
 }
 
-function CurrentlyReadingShelf({ fics, onUpdate, onStep, onRetry, missingCols }) {
+function CurrentlyReadingShelf({ fics, onUpdate, onStep, onRetry, missingCols, sessionApi }) {
   const [open, setOpen] = useState(true);
   const items = useMemo(() => fics
     .filter(f => f.status === STATUS_READING || f.status === STATUS_PAUSED)
@@ -1485,7 +1628,7 @@ function CurrentlyReadingShelf({ fics, onUpdate, onStep, onRetry, missingCols })
       {open && missingCols.length > 0 && (
         <p className="t-caption" style={{ margin: 0, color: 'var(--warn-text)' }}>Add {missingCols.map(c => `"${c}"`).join(', ')} to your Data List tab to keep these between sessions.</p>
       )}
-      {open && items.map(f => (<ReadingShelfItem key={f.id} fic={f} onUpdate={onUpdate} onStep={onStep} onRetry={onRetry} />))}
+      {open && items.map(f => (<ReadingShelfItem key={f.id} fic={f} onUpdate={onUpdate} onStep={onStep} onRetry={onRetry} sessionApi={sessionApi} />))}
     </section>
   );
 }
@@ -1515,6 +1658,287 @@ function toCSVField(v) {
   const s = String(v ?? '');
   if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
   return s;
+}
+
+// ---------- Reading-session timer: hook and UI ----------
+function useReadingSession({ accessToken, fics, updateFic, logMissing, lastSynced }) {
+  const [active, setActiveState] = useState(() => loadActiveSession());
+  const [queueCount, setQueueCount] = useState(() => logQueueLoad().length);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  // ui: null | { kind: 'switch' | 'forgotten' | 'end' | 'flow', pendingFic?, endStamp?, mode?, ficId? }
+  const [ui, setUi] = useState(null);
+  const ficsRef = useRef(fics);
+  useEffect(() => { ficsRef.current = fics; }, [fics]);
+  const tokenRef = useRef(accessToken);
+  useEffect(() => { tokenRef.current = accessToken; }, [accessToken]);
+
+  const setActive = (s) => { saveActiveSession(s); setActiveState(s); };
+  const freshFic = (fic) => (fic && ficsRef.current.find(f => f.id === fic.id)) || fic;
+
+  const flush = async () => {
+    const tok = tokenRef.current;
+    if (tok) {
+      try { await flushLogQueue({ appendRows: rows => sheetsApiAppendLog(tok, rows), readLog: () => sheetsApiGetLog(tok) }); } catch (e) { /* stays queued */ }
+    }
+    setQueueCount(logQueueLoad().length);
+  };
+
+  // Retry anything waiting when the app opens or syncs, and when the device comes back online.
+  useEffect(() => { if (accessToken && lastSynced) flush(); }, [accessToken, lastSynced]);
+  useEffect(() => {
+    const onOnline = () => flush();
+    const onStorage = (e) => { // another tab started or ended a session
+      if (e.key === SESSION_STORE_KEY) setActiveState(loadActiveSession());
+      if (e.key === LOG_QUEUE_KEY) setQueueCount(logQueueLoad().length);
+    };
+    window.addEventListener('online', onOnline);
+    window.addEventListener('storage', onStorage);
+    return () => { window.removeEventListener('online', onOnline); window.removeEventListener('storage', onStorage); };
+  }, []);
+
+  // A session over 6 hours old, or from an earlier day, is never auto-ended: ask instead.
+  const checkForgotten = () => {
+    const s = loadActiveSession();
+    if (s && isSessionForgotten(s, Date.now())) setUi(u => u || { kind: 'forgotten' });
+  };
+  useEffect(() => { checkForgotten(); }, []);
+  // The tick only re-renders the pill; elapsed time is always worked out from the stored start.
+  useEffect(() => {
+    if (!active) return;
+    const tick = () => setNowMs(Date.now());
+    tick();
+    const t = setInterval(tick, 15000);
+    const onVis = () => { if (document.visibilityState === 'visible') { tick(); checkForgotten(); } };
+    document.addEventListener('visibilitychange', onVis);
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', onVis); };
+  }, [active]);
+
+  // No Reading Log tab: logging is skipped silently, as for the other events.
+  useEffect(() => {
+    if (!logMissing) return;
+    if (loadActiveSession()) setActive(null);
+    logQueueUpdate(() => []);
+    setQueueCount(0);
+    setUi(null);
+  }, [logMissing]);
+
+  const doStart = async (ficIn) => {
+    const fic = freshFic(ficIn);
+    if (!fic) return;
+    if (fic.status !== STATUS_READING) {
+      // The existing Start reading / Resume path (status, Date Started, the Started event).
+      const patch = fic.status === STATUS_PAUSED
+        ? { status: STATUS_READING }
+        : { status: STATUS_READING, dnr: 0, dnrTags: [], dnrCategory: false };
+      const ok = await updateFic(fic.id, patch);
+      if (!ok) return; // the card shows the usual "Save failed — tap to retry"
+    }
+    const { session, row } = planSessionStart(fic, Date.now());
+    logQueueAdd(row, session.startEventId);
+    setActive(session);
+    setQueueCount(logQueueLoad().length);
+    flush();
+  };
+
+  const startSession = (fic) => {
+    const cur = loadActiveSession();
+    if (cur) {
+      const forgotten = isSessionForgotten(cur, Date.now());
+      if (cur.ficId === fic.id && !forgotten) { setUi({ kind: 'end' }); return; }
+      setUi(forgotten ? { kind: 'forgotten', pendingFic: fic } : { kind: 'switch', pendingFic: fic });
+      return;
+    }
+    doStart(fic);
+  };
+  const openEnd = () => {
+    const cur = loadActiveSession();
+    if (!cur) return;
+    setUi(isSessionForgotten(cur, Date.now()) ? { kind: 'forgotten' } : { kind: 'end' });
+  };
+
+  const writeEnd = (session, chapters, endStamp) => {
+    logQueueAdd(sessionEndRow(session, chapters, endStamp));
+    setActive(null);
+    setQueueCount(logQueueLoad().length);
+    flush();
+  };
+  // Shared by Save / I finished it / DNF. The chapter count goes to the Data List through the same
+  // path as the chapter stepper, minus the Progress row (the "Session ended" row records it).
+  const endWith = async (mode, chapters) => {
+    const s = loadActiveSession();
+    const u = ui || {};
+    if (!s) { setUi(null); return; }
+    if (!u.endStamp && isSessionForgotten(s, Date.now())) { setUi({ kind: 'forgotten', pendingFic: u.pendingFic }); return; }
+    const fic = ficsRef.current.find(f => f.id === s.ficId);
+    const endChapters = mode === 'finish' ? Math.max(s.startChapters, fic ? fic.chapters || 0 : chapters) : chapters;
+    const endStamp = u.endStamp || melbourneNow().stamp;
+    setUi(null);
+    writeEnd(s, endChapters, endStamp);
+    if (fic) await updateFic(fic.id, { chaptersRead: endChapters, lastRead: endStamp }, { skipLogEvents: true });
+    if (mode !== 'save' && fic) { setUi({ kind: 'flow', mode, ficId: fic.id, pendingFic: u.pendingFic }); return; }
+    if (u.pendingFic) doStart(u.pendingFic);
+  };
+  const flowDone = () => {
+    const p = ui && ui.pendingFic;
+    setUi(null);
+    if (p) doStart(p);
+  };
+  const discard = () => {
+    const s = loadActiveSession();
+    const p = ui && ui.pendingFic;
+    if (s) logQueueRemove(s.startEventId); // a start still waiting to sync is dropped too
+    setActive(null);
+    setQueueCount(logQueueLoad().length);
+    setUi(null);
+    if (p) doStart(p);
+  };
+  const setEndTime = (endStamp) => setUi(u => ({ kind: 'end', endStamp, pendingFic: u && u.pendingFic }));
+
+  return {
+    enabled: !logMissing, active, nowMs, queueCount, ui, setUi,
+    startSession, openEnd, endWith, flowDone, discard, setEndTime,
+  };
+}
+
+function TimerIcon(props) {
+  return <svg xmlns="http://www.w3.org/2000/svg" width={props.size || 18} height={props.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5"/><path d="M9.5 2h5"/><path d="M12 2v3"/></svg>;
+}
+
+// Timer button on fic cards: starts a session, or opens the end sheet when this fic's session is running.
+function SessionButton({ fic, sessionApi }) {
+  if (!sessionApi || !sessionApi.enabled) return null;
+  const running = !!sessionApi.active && sessionApi.active.ficId === fic.id;
+  return (
+    <button onClick={() => (running ? sessionApi.openEnd() : sessionApi.startSession(fic))} className="icon-btn"
+      aria-label={running ? 'End reading session' : 'Start reading session'} title={running ? 'End session' : 'Start session'}
+      style={running ? { background: 'var(--accent)', color: 'var(--on-accent)' } : undefined}>
+      <TimerIcon size={18} />
+    </button>
+  );
+}
+
+function SessionPill({ api }) {
+  const s = api.active;
+  if (!s) return null;
+  const forgotten = isSessionForgotten(s, api.nowMs);
+  const timeText = forgotten ? `since ${sessionDayLabel(s).split(' ')[0]} ${s.startStamp.slice(11)}` : formatElapsed(api.nowMs - s.startMs);
+  const openFic = () => {
+    const el = document.getElementById(`shelf-${s.ficId}`) || document.getElementById('reading-shelf');
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+  return (
+    <div className="session-pill" role="region" aria-label="Reading session">
+      <button onClick={openFic} className="session-pill-main" aria-label={`${s.title}, ${timeText}. Go to this fic`}>
+        <TimerIcon size={18} />
+        <span className="session-pill-title">{s.title}</span>
+        <span className="session-pill-time num">{timeText}</span>
+      </button>
+      <button onClick={api.openEnd} className="session-pill-end">End</button>
+    </div>
+  );
+}
+
+function SessionEndSheet({ session, fic, endStamp, pendingFic, onEnd, onDiscard, onClose }) {
+  const min = session.startChapters;
+  const max = Math.max(min, fic ? fic.chapters || 0 : min);
+  const [chapters, setChapters] = useState(() => Math.min(max, Math.max(min, fic ? fic.chaptersRead || 0 : min)));
+  const step = (d) => setChapters(c => Math.min(max, Math.max(min, c + d)));
+  return (
+    <Sheet label="End reading session" onClose={onClose}>
+      <div>
+        <div className="t-meta" style={{ fontWeight: 700 }}>
+          {endStamp ? `Ending at ${endStamp.slice(11)} on ${sessionDayLabel(session)}` : `Reading session · ${formatElapsed(Date.now() - session.startMs)}`}
+        </div>
+        <h2 className="t-sheet" style={{ marginTop: 2 }}>{session.title}</h2>
+        {pendingFic && <p className="t-caption" style={{ margin: '4px 0 0' }}>Then starting {pendingFic.title}</p>}
+      </div>
+      <div className="stack" style={{ gap: 8 }}>
+        <div style={{ fontSize: 15, fontWeight: 800 }}>Chapters read now</div>
+        <div className="row" style={{ gap: 8 }}>
+          <button onClick={() => step(-1)} disabled={chapters <= min} className="icon-btn" aria-label="One chapter fewer" style={{ fontSize: 20, fontWeight: 700 }}>−</button>
+          <div className="num grow" style={{ textAlign: 'center', fontSize: 22, fontWeight: 800 }} aria-live="polite">
+            {chapters} <span className="t-meta">/ {fic ? fic.chapters : max} ch</span>
+          </div>
+          <button onClick={() => step(1)} disabled={chapters >= max} className="icon-btn" aria-label="One chapter more" style={{ fontSize: 20, fontWeight: 700 }}>+</button>
+          <button onClick={() => step(1)} disabled={chapters >= max} className="btn btn-secondary">+1 chapter</button>
+        </div>
+        <p className="t-caption" style={{ margin: 0 }}>
+          Started this session at chapter {min}{chapters > min ? ` · +${chapters - min} this session` : ''}
+        </p>
+      </div>
+      <button onClick={() => onEnd('save', chapters)} className="btn btn-primary btn-xl">Save session</button>
+      <div className="row" style={{ gap: 8 }}>
+        <button onClick={() => onEnd('finish', chapters)} className="btn btn-lg grow" style={{ background: 'var(--lime)', color: '#111111' }}><Check size={14} />I finished it</button>
+        <button onClick={() => onEnd('dnf', chapters)} className="btn btn-danger btn-lg grow">DNF</button>
+      </div>
+      <button onClick={onDiscard} className="btn btn-text">Discard session</button>
+    </Sheet>
+  );
+}
+
+function SessionForgottenSheet({ session, onSetEnd, onDiscard, onClose }) {
+  const nowMs = Date.now();
+  const bounds = sessionEndBounds(session, nowMs);
+  const [picking, setPicking] = useState(false);
+  const [time, setTime] = useState(bounds.max);
+  const stamp = sessionEndStampFor(session, time, nowMs);
+  return (
+    <Sheet label="Still reading?" onClose={onClose}>
+      <div>
+        <h2 className="t-sheet">Still reading {session.title}?</h2>
+        <p className="t-body" style={{ marginTop: 6 }}>Your session started at {session.startStamp.slice(11)} on {sessionDayLabel(session)}.</p>
+      </div>
+      {picking ? (
+        <div className="stack" style={{ gap: 8 }}>
+          <label className="stack" style={{ gap: 6 }}>
+            <span style={{ fontSize: 15, fontWeight: 800 }}>When did you stop reading?</span>
+            <input type="time" value={time} min={bounds.min} max={bounds.max} onChange={e => setTime(e.target.value)} aria-describedby="session-end-hint"
+              style={{ minHeight: 48, border: 0, borderRadius: 999, padding: '0 16px', background: 'var(--surface-sunken)', color: 'var(--text)', fontSize: 16, fontWeight: 700 }} />
+          </label>
+          <p id="session-end-hint" className="t-caption" style={{ margin: 0, ...(stamp ? {} : { color: 'var(--error-text)' }) }}>
+            Any time from {bounds.min} to {bounds.max} on {sessionDayLabel(session)}.
+          </p>
+          <button disabled={!stamp} onClick={() => onSetEnd(stamp)} className="btn btn-primary btn-xl">Next: chapters read</button>
+        </div>
+      ) : (
+        <button onClick={() => setPicking(true)} className="btn btn-primary btn-xl">Set end time</button>
+      )}
+      <button onClick={onDiscard} className="btn btn-text">Discard</button>
+    </Sheet>
+  );
+}
+
+// Everything the session shows on top of the app: the floating pill and its sheets.
+function SessionLayer({ api, fics, onUpdate }) {
+  const s = api.active;
+  const ui = api.ui;
+  const sessionFic = s ? fics.find(f => f.id === s.ficId) : null;
+  const flowFic = ui && ui.kind === 'flow' ? fics.find(f => f.id === ui.ficId) : null;
+  return (
+    <>
+      <SessionPill api={api} />
+      {ui && ui.kind === 'switch' && s && (
+        <Sheet label="End current session?" onClose={() => api.setUi(null)}>
+          <h2 className="t-sheet">End your session on {s.title} first?</h2>
+          <button onClick={() => api.setUi({ kind: 'end', pendingFic: ui.pendingFic })} className="btn btn-primary btn-xl">End it and start this one</button>
+          <button onClick={() => api.setUi(null)} className="btn btn-text">Cancel</button>
+        </Sheet>
+      )}
+      {ui && ui.kind === 'forgotten' && s && (
+        <SessionForgottenSheet key={`forgot-${s.startEventId}`} session={s} onSetEnd={api.setEndTime} onDiscard={api.discard} onClose={() => api.setUi(null)} />
+      )}
+      {ui && ui.kind === 'end' && s && (
+        <SessionEndSheet key={`end-${s.startEventId}-${ui.endStamp || ''}`} session={s} fic={sessionFic} endStamp={ui.endStamp} pendingFic={ui.pendingFic}
+          onEnd={api.endWith} onDiscard={api.discard} onClose={() => api.setUi(null)} />
+      )}
+      {flowFic && (
+        <StatusPicker key={`flow-${ui.ficId}-${ui.mode}`} ficId={flowFic.id} status={flowFic.status} dnr={flowFic.dnr} dnrTags={flowFic.dnrTags} dnrCategory={flowFic.dnrCategory} enjoyment={flowFic.enjoyment}
+          kg={flowFic.kg} bk={flowFic.bk} tags={flowFic.tags} category={flowFic.category} onUpdate={onUpdate}
+          panelOnly initialPending={ui.mode === 'finish' ? STATUS_READ : STATUS_DNF}
+          onDone={api.flowDone} onCancel={api.flowDone} title={flowFic.title} authors={flowFic.authors} />
+      )}
+    </>
+  );
 }
 
 function ExportPanel({ fics, onClose }) {
@@ -1562,6 +1986,7 @@ function HollanovRolladexLive() {
   const { accessToken, gisReady, signIn, signOut, authError } = useGoogleAuth();
   const { fics, status: syncStatus, errorMsg, lastSynced, refresh, updateFic, retrySync, updateRecommendation, stepChapters, readingMissing, logMissing } = useSheetFics(accessToken, signOut);
   const scores = useComputedScores(fics);
+  const sessionApi = useReadingSession({ accessToken, fics, updateFic, logMissing, lastSynced });
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState(new Set([STATUS_UNREAD]));
@@ -1664,7 +2089,7 @@ function HollanovRolladexLive() {
   const visible = filteredIndices.slice(0, visibleCount);
 
   return (
-    <div className="app stack" style={{ gap: 18 }}>
+    <div className={`app stack${sessionApi.active ? ' has-session' : ''}`} style={{ gap: 18 }}>
       <header className="stack" style={{ gap: 12 }}>
         <div className="row" style={{ justifyContent: 'space-between', gap: 12 }}>
           <div className="stack" style={{ gap: 2, minWidth: 0 }}>
@@ -1682,6 +2107,7 @@ function HollanovRolladexLive() {
             {syncStatus === 'loading' && 'Syncing…'}
             {syncStatus === 'success' && lastSynced && `Synced ${lastSynced.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
             {syncStatus === 'error' && <span style={{ color: 'var(--error-text)' }}>Sync failed — showing last loaded data</span>}
+            {sessionApi.queueCount > 0 && ` · ${sessionApi.queueCount} event${sessionApi.queueCount === 1 ? '' : 's'} waiting to sync`}
           </span>
         </div>
 
@@ -1729,7 +2155,7 @@ function HollanovRolladexLive() {
         </div>
       </header>
 
-      <CurrentlyReadingShelf fics={fics} onUpdate={updateFic} onStep={stepChapters} onRetry={retrySync} missingCols={readingMissing} />
+      <CurrentlyReadingShelf fics={fics} onUpdate={updateFic} onStep={stepChapters} onRetry={retrySync} missingCols={readingMissing} sessionApi={sessionApi} />
 
       <main id="fic-list" className="stack" style={{ gap: 12 }}>
         <h2 className="t-section">Fics <span className="t-meta">· {SORT_NOTE[sortBy]}</span></h2>
@@ -1743,7 +2169,7 @@ function HollanovRolladexLive() {
           <div className="card" style={{ textAlign: 'center' }}><span className="t-meta">No fics match these filters.</span></div>
         )}
         {scores && visible.map(idx => (
-          <FicCard key={fics[idx].id} fic={fics[idx]} ficIndex={idx} scores={scores} onUpdate={updateFic} onRetry={retrySync} onUpdateRecommendation={updateRecommendation} canAddDateRead={!readingMissing.includes('Date Read')}
+          <FicCard key={fics[idx].id} fic={fics[idx]} ficIndex={idx} scores={scores} onUpdate={updateFic} onRetry={retrySync} onUpdateRecommendation={updateRecommendation} canAddDateRead={!readingMissing.includes('Date Read')} sessionApi={sessionApi}
             expanded={expandedId === fics[idx].id} onToggleExpand={(id) => setExpandedId(prev => (prev === id ? null : id))} />
         ))}
         {visibleCount < filteredIndices.length && (
@@ -1836,6 +2262,8 @@ function HollanovRolladexLive() {
       )}
 
       {showExport && <ExportPanel fics={fics} onClose={() => setShowExport(false)} />}
+
+      <SessionLayer api={sessionApi} fics={fics} onUpdate={updateFic} />
 
       <nav className="nav" aria-label="Sections">
         <button onClick={() => goTo('fics')} aria-current={activeNav === 'fics' ? 'page' : undefined} aria-label="Fics"><ListIcon />{activeNav === 'fics' && 'Fics'}</button>
